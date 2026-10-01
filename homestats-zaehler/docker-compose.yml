@@ -1,0 +1,18 @@
+version: "3.7"
+
+services:
+  app_proxy:
+    environment:
+      # Format: <app-id>_<service-name>_1
+      APP_HOST: homestats-zaehler_web_1
+      APP_PORT: 8080
+
+  web:
+    # Wird von .github/workflows/release.yml beim Release auf Tag + Digest gesetzt.
+    image: ghcr.io/schriftlich/homestats-zaehler:0.1.0
+    user: "1000:1000"
+    init: true
+    restart: on-failure
+    stop_grace_period: 10s
+    volumes:
+      - ${APP_DATA_DIR}/data/db:/data

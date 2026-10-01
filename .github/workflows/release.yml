@@ -1,0 +1,127 @@
+# Release-Ablauf: git tag -a v1.2.3 -m "Release Notes" && git push origin v1.2.3
+#
+# 1. Tests
+# 2. Image nativ für amd64 und arm64 bauen (kein QEMU) und nach ghcr.io pushen
+# 3. Multi-Arch-Manifest erstellen und prüfen
+# 4. Version + Image-Digest in das Umbrel-Paket schreiben und nach main pushen
+#    -> Umbrel sieht das Update erst, wenn das Image wirklich existiert.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/schriftlich/homestats-zaehler
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r app/requirements-dev.txt
+      - run: python -m pytest -q
+        working-directory: app
+
+  build:
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Version bestimmen
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: app
+          platforms: ${{ matrix.platform }}
+          build-args: VERSION=${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          provenance: false
+      - name: Digest merken
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.runner }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: /tmp/digests
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Multi-Arch-Manifest erstellen
+        working-directory: /tmp/digests
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          docker buildx imagetools create -t "$IMAGE:$VERSION" $(printf "$IMAGE@sha256:%s " *)
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
+          PLATFORMS=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r '.manifests[].platform | .os + "/" + .architecture' | sort | tr '\n' ' ')
+          echo "Plattformen: $PLATFORMS"
+          [ "$PLATFORMS" = "linux/amd64 linux/arm64 " ] || { echo "Plattformen unvollständig"; exit 1; }
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "IMAGE_REF=$IMAGE:$VERSION@$DIGEST" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Umbrel-Paket aktualisieren
+        run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents:body)' > /tmp/notes.txt
+          [ -s /tmp/notes.txt ] || git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents:subject)' > /tmp/notes.txt
+          python3 .github/scripts/bump.py "$VERSION" "$IMAGE_REF" /tmp/notes.txt
+          git diff
+      - name: Nach main pushen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add homestats-zaehler
+          git commit -m "Release $VERSION: Umbrel-Paket auf $IMAGE_REF"
+          git push origin HEAD:main

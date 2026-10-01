@@ -1,0 +1,39 @@
+manifestVersion: 1
+id: homestats-zaehler
+category: finance
+name: Zählerstände
+version: "0.1.0"
+tagline: Gas, Wasser und Strom ablesen – Verbrauch und Kosten im Blick
+icon: https://raw.githubusercontent.com/schriftlich/homestats/main/homestats-zaehler/icon.svg
+description: >-
+  Zählerstände für Gas, Wasser und Strom monatlich am Handy erfassen und
+  Verbrauch sowie Kosten auswerten. Die App ist durch die Umbrel-Anmeldung
+  geschützt und braucht keinen eigenen Login.
+
+
+  - Verbrauch wird zwischen Ablesungen tagesgenau auf Kalendermonate verteilt
+
+  - Zählerwechsel ohne Sprünge in der Verbrauchsreihe
+
+  - Tarife, Gas-Umrechnung (Zustandszahl, Brennwert) und Abschläge mit Gültig-ab-Datum
+
+  - Hochrechnung der Jahreskosten gegen die Abschläge: Nachzahlung oder Guthaben
+
+  - Vorjahresvergleich, Plausibilitätswarnungen, CSV-Backup
+releaseNotes: ""
+
+developer: schriftlich
+website: https://github.com/schriftlich/homestats
+dependencies: []
+repo: https://github.com/schriftlich/homestats
+support: https://github.com/schriftlich/homestats/issues
+
+port: 8743
+gallery: []
+path: ""
+
+defaultUsername: ""
+defaultPassword: ""
+
+submitter: schriftlich
+submission: https://github.com/schriftlich/homestats
