@@ -17,7 +17,7 @@ def r(meter_id, day, value, nt=None):
 
 
 def total(series, start, end):
-    return sum(sum(v) for d, v in series.items() if start <= d < end)
+    return sum(v[0] + v[1] for d, v in series.items() if start <= d < end)
 
 
 # --- Verbrauchsverteilung --------------------------------------------------
@@ -180,10 +180,19 @@ def test_gas_forecast_uses_seasonal_profile():
 
 def test_estimator_prefers_previous_year_month():
     m = Meter(1, "wasser", "Wasser", "m³")
-    s = daily_series([m], [r(1, D(2023, 7, 1), 0), r(1, D(2023, 8, 1), 62), r(1, D(2024, 1, 1), 215)])
+    s = daily_series([m], [r(1, D(2023, 7, 1), 0), r(1, D(2023, 8, 1), 62), r(1, D(2023, 9, 1), 93), r(1, D(2023, 10, 1), 123)])
     est = Estimator(s, "wasser")
     assert est.rate(D(2024, 7, 10))[0] == pytest.approx(2.0)
     assert est.rate(D(2024, 9, 10))[0] == pytest.approx(1.0)
+
+
+def test_long_intervals_do_not_define_month_profile():
+    m = Meter(1, "gas", "Gas", "m³")
+    # 10 Monate ohne Ablesung: linear verteilt wäre der Sommer viel zu hoch
+    s = daily_series([m], [r(1, D(2025, 6, 1), 0), r(1, D(2026, 4, 1), 900)])
+    est = Estimator(s, "gas")
+    assert not est.month_rate  # kein Monat aus kurzem Intervall
+    assert est.rate(D(2026, 7, 15))[0] < est.rate(D(2026, 1, 15))[0] / 4
 
 
 # --- Plausibilität ---------------------------------------------------------

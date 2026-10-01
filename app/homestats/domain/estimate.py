@@ -15,6 +15,9 @@ from .series import DailySeries
 # Relativer Monatsanteil am Jahres-Gasverbrauch eines Haushalts mit Heizung.
 GAS_PROFILE = {1: 17, 2: 15, 3: 13, 4: 9, 5: 5, 6: 3, 7: 2.5, 8: 2.5, 9: 4, 10: 8, 11: 12, 12: 16}
 MIN_DAYS_PER_MONTH = 10
+# Tage aus längeren Ableseintervallen taugen nicht für ein Monatsprofil: Bei
+# linearer Verteilung über z. B. 10 Monate landet Winterverbrauch im Sommer.
+MAX_PROFILE_SPAN = 62
 
 
 def month_weight(medium: str, month: int) -> float:
@@ -38,13 +41,14 @@ class Estimator:
         total = [0.0, 0.0]
         weight_sum = 0.0
         self.days = 0
-        for day, (main, nt) in series.items():
+        for day, (main, nt, span) in series.items():
             if exclude and exclude[0] <= day < exclude[1]:
                 continue
-            s = sums.setdefault(day.month, [0.0, 0.0])
-            s[0] += main
-            s[1] += nt
-            counts[day.month] = counts.get(day.month, 0) + 1
+            if span <= MAX_PROFILE_SPAN:
+                s = sums.setdefault(day.month, [0.0, 0.0])
+                s[0] += main
+                s[1] += nt
+                counts[day.month] = counts.get(day.month, 0) + 1
             total[0] += main
             total[1] += nt
             weight_sum += month_weight(medium, day.month)

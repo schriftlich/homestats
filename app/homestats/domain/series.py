@@ -17,7 +17,7 @@ from typing import Iterable
 
 from .model import Meter, Reading
 
-# Tag -> [Verbrauch Hauptzählwerk, Verbrauch NT-Zählwerk]
+# Tag -> [Verbrauch Hauptzählwerk, Verbrauch NT-Zählwerk, Länge des Ableseintervalls in Tagen]
 DailySeries = dict[date, list[float]]
 
 
@@ -52,9 +52,10 @@ def add_meter_to_series(series: DailySeries, meter: Meter, readings: Iterable[Re
         rate = max(b.value - a.value, 0.0) / days
         rate_nt = max(b.value_nt - a.value_nt, 0.0) / days if meter.dual else 0.0
         for n in range(days):
-            slot = series.setdefault(a.day + timedelta(days=n), [0.0, 0.0])
+            slot = series.setdefault(a.day + timedelta(days=n), [0.0, 0.0, 0.0])
             slot[0] += rate
             slot[1] += rate_nt
+            slot[2] = max(slot[2], days)
 
 
 def daily_series(meters: Iterable[Meter], readings: Iterable[Reading]) -> DailySeries:

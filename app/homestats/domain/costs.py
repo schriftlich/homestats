@@ -101,7 +101,7 @@ def monthly(series: DailySeries, pricer: Pricer) -> dict[tuple[int, int], MonthS
     """Verbrauch und Kosten je Kalendermonat (nur Tage mit Ablesungsdaten)."""
     out: dict[tuple[int, int], MonthStat] = {}
     for day in sorted(series):
-        main, nt = series[day]
+        main, nt, _ = series[day]
         key = (day.year, day.month)
         ms = out.get(key)
         if ms is None:
@@ -190,7 +190,7 @@ def forecast(
     missing: set[str] = set()
     for day in daterange(start, end):
         if day in series:
-            main, nt = series[day]
+            main, nt, _ = series[day]
             dc = pricer.day(day, main, nt)
             covered += 1
             act_c += dc.consumption
