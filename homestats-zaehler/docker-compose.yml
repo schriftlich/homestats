@@ -9,7 +9,7 @@ services:
 
   web:
     # Wird von .github/workflows/release.yml beim Release auf Tag + Digest gesetzt.
-    image: ghcr.io/schriftlich/homestats-zaehler:0.1.0
+    image: ghcr.io/schriftlich/homestats-zaehler:0.1.0@sha256:638ab8c436f28b96a67e9d71b867ab868f42f04b14176e517ce06b968de4374e
     user: "1000:1000"
     init: true
     restart: on-failure

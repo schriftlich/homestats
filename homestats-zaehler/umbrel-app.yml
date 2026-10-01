@@ -20,7 +20,14 @@ description: >-
   - Hochrechnung der Jahreskosten gegen die Abschläge: Nachzahlung oder Guthaben
 
   - Vorjahresvergleich, Plausibilitätswarnungen, CSV-Backup
-releaseNotes: ""
+releaseNotes: >-
+  - Zählerstände für Gas, Wasser und Strom erfassen
+
+
+  - Verbrauch und Kosten pro Monat mit Vorjahresvergleich
+
+
+  - Hochrechnung gegen Abschläge, CSV-Backup
 
 developer: schriftlich
 website: https://github.com/schriftlich/homestats
