@@ -1,4 +1,5 @@
 # Release-Ablauf: git tag -a v1.2.3 -m "Release Notes" && git push origin v1.2.3
+# oder auf GitHub: Releases -> Draft a new release -> neuer Tag v1.2.3 -> Publish
 #
 # 1. Tests
 # 2. Image nativ für amd64 und arm64 bauen (kein QEMU) und nach ghcr.io pushen
@@ -112,10 +113,20 @@ jobs:
           ref: main
           fetch-depth: 0
       - name: Umbrel-Paket aktualisieren
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
-          git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents:body)' > /tmp/notes.txt
-          [ -s /tmp/notes.txt ] || git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents:subject)' > /tmp/notes.txt
+          : > /tmp/notes.txt
+          if [ "$(git cat-file -t "$GITHUB_REF_NAME")" = "tag" ]; then
+            # Annotierter Tag (git tag -a): Nachricht = Release Notes
+            git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents:body)' > /tmp/notes.txt
+            [ -s /tmp/notes.txt ] || git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents:subject)' > /tmp/notes.txt
+          else
+            # Tag über "Draft a new release" auf GitHub: Text des Releases nehmen
+            gh release view "$GITHUB_REF_NAME" --json body --jq .body > /tmp/notes.txt 2>/dev/null || true
+          fi
+          cat /tmp/notes.txt
           python3 .github/scripts/bump.py "$VERSION" "$IMAGE_REF" /tmp/notes.txt
           git diff
       - name: Nach main pushen

@@ -34,7 +34,7 @@ HOMESTATS_DEMO=1 uvicorn homestats.main:app --reload  # http://localhost:8000
 ## Einmalige Einrichtung
 
 1. **Repo öffentlich stellen** (GitHub → Settings → General → Danger Zone → Change visibility). Umbrel lädt den Store ohne Anmeldung, und die nativen arm64-Runner für den Build sind nur für öffentliche Repos kostenlos.
-2. **Erstes Release** erstellen:
+2. **Erstes Release** erstellen – entweder auf GitHub unter **Releases → Draft a new release** (neuer Tag `v0.1.0`, Ziel `main`, Text = Release Notes, **Publish release**) oder per Terminal:
    ```sh
    git tag -a v0.1.0 -m "Erste Version"
    git push origin v0.1.0
@@ -55,7 +55,7 @@ Die App ist durch die Umbrel-Anmeldung geschützt und braucht keinen eigenen Log
 ## Update-Ablauf
 
 1. Code ändern, committen, nach `main` pushen. Die CI führt die Tests aus.
-2. Neue Version taggen. Die Tag-Nachricht wird zu den Release Notes in Umbrel, eine Zeile pro Punkt:
+2. Neue Version taggen – auf GitHub über **Releases → Draft a new release** (der Release-Text wird zu den Release Notes in Umbrel) oder per Terminal, dann ist die Tag-Nachricht der Release-Text, eine Zeile pro Punkt:
    ```sh
    git tag -a v0.2.0 -m "Version 0.2.0" -m "- Neue Funktion X
    - Fehler Y behoben"
