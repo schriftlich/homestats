@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Zähler – Zählerstände{% endblock %}
+{% block content %}
+<h1>Zähler</h1>
+{% if error %}<div class="msg err">{{ error }}</div>{% endif %}
+
+{% if current %}
+<form class="card" method="post" action="/zaehler">
+  <h2>{{ 'Zähler bearbeiten' if current.id else 'Neuer Zähler' }}</h2>
+  <input type="hidden" name="id" value="{{ current.id }}">
+  <label for="medium">Medium</label>
+  <select id="medium" name="medium" onchange="document.getElementById('dualbox').hidden = this.value !== 'strom'; var u=document.getElementById('unit'); if(!u.dataset.touched) u.value = {'strom':'kWh','gas':'m³','wasser':'m³'}[this.value];">
+    {% for m in MEDIA %}<option value="{{ m }}" {{ 'selected' if m == current.medium }}>{{ LABEL[m] }}</option>{% endfor %}
+  </select>
+  <div class="fields2">
+    <div><label for="name">Name</label>
+      <input id="name" name="name" value="{{ current.name }}" placeholder="z. B. Hausstrom"></div>
+    <div><label for="unit">Einheit</label>
+      <input id="unit" name="unit" value="{{ current.unit }}" oninput="this.dataset.touched=1"></div>
+  </div>
+  <label for="meter_number">Zählernummer</label>
+  <input id="meter_number" name="meter_number" value="{{ current.meter_number }}">
+  <div id="dualbox" {{ 'hidden' if current.medium != 'strom' }}>
+    <label class="check"><input type="checkbox" name="dual" value="1" {{ 'checked' if current.dual }}> Zwei Zählwerke (HT/NT)</label>
+  </div>
+
+  <h3>Einbau und Ausbau</h3>
+  <p class="hint" style="margin-top:0">Für Zählerwechsel: beim alten Zähler das Ausbaudatum setzen und am selben Tag den Endstand als Ablesung erfassen. Den neuen Zähler mit Einbaudatum und Anfangsstand (meist 0) anlegen – die Verbrauchsreihe läuft dann nahtlos weiter.</p>
+  <div class="fields2">
+    <div><label for="installed_on">Einbaudatum</label>
+      <input id="installed_on" name="installed_on" type="date" value="{{ current.installed_on.isoformat() if current.installed_on }}"></div>
+    <div><label for="initial">Anfangsstand</label>
+      <input id="initial" name="initial" inputmode="decimal" value="{{ current.initial|plain if current.installed_on }}" placeholder="0"></div>
+  </div>
+  {% if current.medium == 'strom' %}
+  <label for="initial_nt">Anfangsstand NT (nur bei HT/NT)</label>
+  <input id="initial_nt" name="initial_nt" inputmode="decimal" value="{{ current.initial_nt|plain if current.dual and current.installed_on }}" placeholder="0">
+  {% endif %}
+  <label for="removed_on">Ausbaudatum (leer = in Betrieb)</label>
+  <input id="removed_on" name="removed_on" type="date" value="{{ current.removed_on.isoformat() if current.removed_on }}">
+
+  <button class="btn primary block" type="submit">Speichern</button>
+  <a class="btn block" href="/zaehler">Abbrechen</a>
+</form>
+{% if current.id %}
+<form method="post" action="/loeschen/meters/{{ current.id }}" onsubmit="return confirm('Zähler und ALLE seine Ablesungen löschen?')">
+  <input type="hidden" name="next_url" value="/zaehler">
+  <button class="btn danger block" type="submit">Zähler löschen</button>
+</form>
+{% endif %}
+{% else %}
+
+{% for medium in MEDIA %}
+{% set ms = meters|selectattr('medium', 'equalto', medium)|list %}
+<div class="card">
+  <div class="row"><h2 style="margin:0"><span class="dot c-{{ medium }}"></span>{{ LABEL[medium] }}</h2><span class="spacer"></span>
+    <a class="btn small" href="/zaehler?neu={{ medium }}">+ Zähler</a></div>
+  {% if ms %}
+  <ul class="list">
+    {% for m in ms %}
+    <li>
+      <div class="main">
+        <div class="title">{{ m.name }} {% if m.dual %}<span class="badge">HT/NT</span>{% endif %}
+          {% if m.removed_on %}<span class="badge">ausgebaut {{ m.removed_on|ddate }}</span>{% else %}<span class="badge">aktiv</span>{% endif %}</div>
+        <div class="meta">{{ m.unit }}{% if m.meter_number %} · Nr. {{ m.meter_number }}{% endif %}
+          {% if m.installed_on %} · seit {{ m.installed_on|ddate }}{% endif %} · {{ counts.get(m.id, 0) }} Ablesungen</div>
+      </div>
+      <a class="btn small" href="/zaehler?edit={{ m.id }}">Bearbeiten</a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted small">Kein Zähler angelegt.</p>{% endif %}
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

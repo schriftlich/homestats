@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Ablesung bearbeiten – Zählerstände{% endblock %}
+{% block content %}
+<h1>Ablesung bearbeiten</h1>
+{% if error %}<div class="msg err">{{ error }}</div>{% endif %}
+<form class="card" method="post" action="/ablesung">
+  <input type="hidden" name="reading_id" value="{{ r.id }}">
+  <input type="hidden" name="meter_id" value="{{ meter.id }}">
+  <input type="hidden" name="next_url" value="/ablesungen?m={{ meter.medium }}">
+  <p class="muted" style="margin-top:0">{{ LABEL[meter.medium] }} – {{ meter.name }}</p>
+  <label for="day">Datum</label>
+  <input id="day" name="day" type="date" value="{{ r.day.isoformat() }}" required>
+  {% if meter.dual %}
+  <div class="fields2">
+    <div><label for="value">Stand HT ({{ meter.unit }})</label>
+      <input class="big" id="value" name="value" inputmode="decimal" value="{{ r.value|plain }}" required></div>
+    <div><label for="value_nt">Stand NT ({{ meter.unit }})</label>
+      <input class="big" id="value_nt" name="value_nt" inputmode="decimal" value="{{ r.value_nt|plain }}" required></div>
+  </div>
+  {% else %}
+  <label for="value">Zählerstand ({{ meter.unit }})</label>
+  <input class="big" id="value" name="value" inputmode="decimal" value="{{ r.value|plain }}" required>
+  {% endif %}
+  <label for="note">Notiz</label>
+  <input id="note" name="note" value="{{ r.note }}">
+  <button class="btn primary block" type="submit">Speichern</button>
+</form>
+<form method="post" action="/loeschen/readings/{{ r.id }}" onsubmit="return confirm('Ablesung wirklich löschen?')">
+  <input type="hidden" name="next_url" value="/ablesungen?m={{ meter.medium }}">
+  <button class="btn danger block" type="submit">Ablesung löschen</button>
+</form>
+{% endblock %}

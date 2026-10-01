@@ -1,0 +1,24 @@
+{% if selected %}
+{% if last %}
+<p class="hint">Letzter Stand: <strong>{{ last.value|num(3) }}</strong>{% if selected.dual and last.value_nt is not none %} / NT <strong>{{ last.value_nt|num(3) }}</strong>{% endif %} {{ selected.unit }} am {{ last.day|ddate }}</p>
+{% elif selected.installed_on %}
+<p class="hint">Anfangsstand: {{ selected.initial|num(3) }} {{ selected.unit }} am {{ selected.installed_on|ddate }}</p>
+{% else %}
+<p class="hint">Erste Ablesung für diesen Zähler.</p>
+{% endif %}
+{% if selected.dual %}
+<div class="fields2">
+  <div>
+    <label for="value">Stand HT ({{ selected.unit }})</label>
+    <input class="big" id="value" name="value" type="text" inputmode="decimal" autocomplete="off" value="{{ form.value if form }}" required autofocus>
+  </div>
+  <div>
+    <label for="value_nt">Stand NT ({{ selected.unit }})</label>
+    <input class="big" id="value_nt" name="value_nt" type="text" inputmode="decimal" autocomplete="off" value="{{ form.value_nt if form }}" required>
+  </div>
+</div>
+{% else %}
+<label for="value">Zählerstand ({{ selected.unit }})</label>
+<input class="big" id="value" name="value" type="text" inputmode="decimal" autocomplete="off" value="{{ form.value if form }}" placeholder="z. B. 12345,6" required autofocus>
+{% endif %}
+{% endif %}

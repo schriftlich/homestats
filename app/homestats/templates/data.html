@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Daten – Zählerstände{% endblock %}
+{% block content %}
+<h1>Export &amp; Import</h1>
+{% if result %}<div class="msg ok">{{ result }}</div>{% endif %}
+{% if error %}<div class="msg err">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <h2>Backup herunterladen</h2>
+  <p class="muted">ZIP-Datei mit einer CSV je Tabelle (Zähler, Ablesungen, Tarife, Gas-Faktoren, Abschläge, Einstellungen). Trennzeichen Semikolon, Dezimalkomma – lässt sich direkt in Excel oder LibreOffice öffnen.</p>
+  <a class="btn primary" href="/daten/export">Backup herunterladen</a>
+</div>
+
+<div class="card">
+  <h2>Backup wiederherstellen</h2>
+  <div class="msg warn">Achtung: Der Import <strong>ersetzt alle vorhandenen Daten</strong>. Lade vorher sicherheitshalber ein Backup herunter.</div>
+  <form method="post" action="/daten/import" enctype="multipart/form-data">
+    <label for="file">Backup-Datei (.zip)</label>
+    <input id="file" name="file" type="file" accept=".zip,application/zip" required>
+    <label class="check"><input type="checkbox" name="confirm" value="1" required> Ja, alle vorhandenen Daten ersetzen</label>
+    <button class="btn primary block" type="submit">Importieren</button>
+  </form>
+</div>
+{% endblock %}

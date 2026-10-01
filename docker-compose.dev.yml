@@ -1,0 +1,12 @@
+# Lokal testen: docker compose -f docker-compose.dev.yml up --build
+# Öffnen: http://localhost:8743  (Beispieldaten werden bei leerer DB angelegt)
+services:
+  web:
+    build: ./app
+    ports:
+      - "8743:8080"
+    environment:
+      HOMESTATS_DEMO: "1"
+    volumes:
+      - ./data-dev:/data
+    user: "1000:1000"

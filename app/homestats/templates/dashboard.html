@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block content %}
+{% set d = board.data %}
+{% set f = board.forecast %}
+
+<div class="grid3">
+  {% for b in boards %}
+  {% set bf = b.forecast %}
+  <a class="card tile {{ 'on' if b.data.medium == medium }}" href="/?m={{ b.data.medium }}" style="margin:0">
+    <div class="label"><span class="dot c-{{ b.data.medium }}"></span>{{ LABEL[b.data.medium] }}</div>
+    {% if not b.data.has_meters %}
+      <div class="value muted">–</div><div class="sub">noch kein Zähler</div>
+    {% elif not bf.has_data %}
+      <div class="value muted">–</div><div class="sub">zu wenige Ablesungen</div>
+    {% else %}
+      <div class="value {{ 'good' if bf.balance >= 0 else 'bad' }}">{{ '+' if bf.balance >= 0 }}{{ bf.balance|euro(0) }}</div>
+      <div class="sub">{{ 'Guthaben' if bf.balance >= 0 else 'Nachzahlung' }} (Prognose)</div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+{% if not d.has_meters %}
+<div class="card">
+  <h2>{{ LABEL[medium] }}: noch kein Zähler</h2>
+  <p class="muted">Lege zuerst einen Zähler an, dann kannst du Ablesungen erfassen.</p>
+  <a class="btn primary" href="/zaehler?neu={{ medium }}">Zähler anlegen</a>
+</div>
+{% else %}
+
+<div class="card">
+  <h2>Hochrechnung {{ f.start|ddate }} – {{ f.last_day|ddate }}</h2>
+  {% if not f.has_data %}
+    <p class="muted">Für eine Hochrechnung braucht es mindestens zwei Ablesungen.</p>
+  {% else %}
+    <div class="hero {{ 'good' if f.balance >= 0 else 'bad' }}">{{ '+' if f.balance >= 0 }}{{ f.balance|euro }}</div>
+    <div class="muted small">voraussichtlich {{ 'Guthaben' if f.balance >= 0 else 'Nachzahlung' }} zum Ende des Abrechnungszeitraums</div>
+    <dl class="kv">
+      <dt>Kosten hochgerechnet</dt><dd>{{ f.cost|euro }}</dd>
+      <dt>Summe Abschläge</dt><dd>{{ f.installments|euro }}</dd>
+      <dt>davon bereits gemessen</dt><dd>{{ f.actual_cost|euro }}</dd>
+      <dt>Verbrauch hochgerechnet</dt><dd>{{ f.consumption|num(0) }} {{ d.unit }}</dd>
+    </dl>
+    <div class="progress" title="Anteil gemessener Tage"><div style="width: {{ (100 * f.covered_days / f.total_days)|round(0) }}%"></div></div>
+    <p class="hint">{{ f.covered_days }} von {{ f.total_days }} Tagen gemessen, Rest geschätzt
+      {%- if medium == 'gas' %} (nach Vorjahresmonaten bzw. Heizprofil){% else %} (nach Vorjahresmonaten bzw. Durchschnitt){% endif %}.</p>
+    {% if f.installments == 0 %}<p class="hint">Noch kein Abschlag hinterlegt – <a href="/tarife?m={{ medium }}">jetzt eintragen</a>.</p>{% endif %}
+  {% endif %}
+  {% for m in f.missing %}<div class="msg warn" style="margin:10px 0 0">{{ m }} – <a href="/tarife?m={{ medium }}">unter Tarife ergänzen</a>.</div>{% endfor %}
+</div>
+
+{% if board.last_month %}
+{% set lm = board.last_month %}{% set pm = board.last_month_prev_year %}
+<div class="card">
+  <h2>{{ MONTHS_LONG[lm.month - 1] }} {{ lm.year }}</h2>
+  <dl class="kv" style="margin-top:0">
+    <dt>Verbrauch</dt><dd>{{ lm.consumption|num(1) }} {{ d.unit }}{% if d.billed_unit != d.unit %} <span class="muted">({{ lm.billed|num(0) }} {{ d.billed_unit }})</span>{% endif %}</dd>
+    <dt>Kosten</dt><dd>{{ lm.cost|euro }}</dd>
+    {% if pm and pm.consumption > 0 %}
+    {% set diff = (lm.consumption / pm.consumption - 1) * 100 %}
+    <dt>ggü. Vorjahresmonat</dt><dd class="{{ 'bad' if diff > 0 else 'good' }}">{{ '+' if diff > 0 }}{{ diff|num(0) }} %</dd>
+    {% endif %}
+  </dl>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Verbrauch pro Monat ({{ d.unit }})</h2>
+  <div class="legend">
+    <span><i class="c-{{ medium }}"></i>letzte 12 Monate</span>
+    <span><i style="background:var(--prev)"></i>Vorjahr</span>
+    <span><i class="c-{{ medium }} partial"></i>vorläufig</span>
+  </div>
+  <div class="chartbox"><canvas id="chartConsumption" aria-label="Verbrauch pro Monat"></canvas></div>
+</div>
+
+<div class="card">
+  <h2>Kosten pro Monat (€)</h2>
+  <div class="legend">
+    <span><i class="c-{{ medium }}"></i>letzte 12 Monate</span>
+    <span><i style="background:var(--prev)"></i>Vorjahr</span>
+  </div>
+  <div class="chartbox"><canvas id="chartCost" aria-label="Kosten pro Monat"></canvas></div>
+</div>
+
+<div class="card">
+  <h2>Monatswerte</h2>
+  {% if board.table %}
+  {% macro month_table(rows) %}
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th>Monat</th><th class="r">Verbrauch</th>
+      {% if d.billed_unit != d.unit %}<th class="r">{{ d.billed_unit }}</th>{% endif %}
+      <th class="r">Kosten</th><th class="r">Vorjahr</th>
+    </tr></thead>
+    <tbody>
+    {% for ms, prev in rows %}
+      <tr class="{{ 'partial' if not ms.complete }}">
+        <td style="white-space:nowrap">{{ month_label(ms.year, ms.month) }}{% if not ms.complete %} <span class="badge" title="{{ ms.covered_days }} von {{ ms.days }} Tagen abgedeckt">teilw.</span>{% endif %}</td>
+        <td class="r">{{ ms.consumption|num(1) }}</td>
+        {% if d.billed_unit != d.unit %}<td class="r">{{ ms.billed|num(0) }}</td>{% endif %}
+        <td class="r">{{ ms.cost|euro }}</td>
+        <td class="r muted">{{ prev.consumption|num(1) if prev else '–' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endmacro %}
+  <p class="muted small" style="margin-top:0">Verbrauch in {{ d.unit }}</p>
+  {{ month_table(board.table[:13]) }}
+  {% if board.table|length > 13 %}
+  <details style="margin-top:10px"><summary>Ältere Monate ({{ board.table|length - 13 }})</summary>
+  {{ month_table(board.table[13:]) }}
+  </details>
+  {% endif %}
+  <p class="hint">Grau = Monat nur teilweise durch Ablesungen abgedeckt. Verbrauch zwischen zwei Ablesungen wird gleichmäßig auf die Tage verteilt.</p>
+  {% else %}
+  <p class="muted">Noch keine Monatswerte – dafür braucht es mindestens zwei Ablesungen.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if board.data.has_meters %}
+<script src="{{ url_for('static', path='vendor/chart.umd.min.js') }}"></script>
+<script id="chartdata" type="application/json">{{ board.chart|tojson }}</script>
+<script src="{{ url_for('static', path='charts.js') }}"></script>
+<script>renderCharts("{{ medium }}");</script>
+{% endif %}
+{% endblock %}

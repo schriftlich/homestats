@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Ablesen – Zählerstände{% endblock %}
+{% block content %}
+<h1>Zählerstand erfassen</h1>
+
+{% if saved %}
+<div class="msg ok">Gespeichert: {{ saved_meter.name }} – {{ saved.value|num(3) }} {{ saved_meter.unit }}
+  {%- if saved.value_nt is not none %} / NT {{ saved.value_nt|num(3) }}{% endif %} am {{ saved.day|ddate }}.</div>
+{% endif %}
+{% if warnings %}
+<div class="msg warn"><strong>Bitte prüfen:</strong>
+  <ul>{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  <a href="/ablesungen/{{ saved.id }}">Ablesung korrigieren</a>
+</div>
+{% endif %}
+{% if error %}<div class="msg err">{{ error }}</div>{% endif %}
+
+{% if not meters %}
+<div class="card">
+  <p>Es gibt noch keinen aktiven Zähler.</p>
+  <a class="btn primary" href="/zaehler?neu=strom">Zähler anlegen</a>
+</div>
+{% else %}
+<form class="card" method="post" action="/ablesung">
+  <label for="meter_id">Zähler</label>
+  <select id="meter_id" name="meter_id" hx-get="/ablesung/felder" hx-target="#fields" hx-trigger="change">
+    {% for m in meters %}
+    <option value="{{ m.id }}" {{ 'selected' if selected and m.id == selected.id }}>{{ LABEL[m.medium] }} – {{ m.name }}{% if m.meter_number %} ({{ m.meter_number }}){% endif %}</option>
+    {% endfor %}
+  </select>
+
+  <label for="day">Datum</label>
+  <input id="day" name="day" type="date" value="{{ form.day if form else today.isoformat() }}" required>
+
+  <div id="fields">{% include "_reading_fields.html" %}</div>
+
+  <label for="note">Notiz (optional)</label>
+  <input id="note" name="note" type="text" value="{{ form.note if form }}" placeholder="z. B. geschätzt, Zählerwechsel …">
+
+  <button class="btn primary block" type="submit">Speichern</button>
+</form>
+{% endif %}
+{% endblock %}

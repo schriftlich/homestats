@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Verlauf – Zählerstände{% endblock %}
+{% block content %}
+<h1>Ablesungen</h1>
+<div class="tabs">
+  {% for m in MEDIA %}<a class="{{ 'on' if m == medium }}" href="/ablesungen?m={{ m }}"><span class="dot c-{{ m }}"></span>{{ LABEL[m] }}</a>{% endfor %}
+</div>
+
+{% if warnings %}
+<div class="msg warn">{{ warnings|length }} Ablesung(en) mit Hinweis – siehe unten.</div>
+{% endif %}
+
+{% for meter in data.meters %}
+{% set rs = data.readings|selectattr('meter_id', 'equalto', meter.id)|list %}
+<div class="card">
+  <div class="row">
+    <h2 style="margin:0">{{ meter.name }}</h2>
+    {% if meter.removed_on %}<span class="badge">ausgebaut {{ meter.removed_on|ddate }}</span>{% endif %}
+    <span class="spacer"></span>
+    <a class="btn small" href="/ablesung?meter_id={{ meter.id }}">+ Ablesung</a>
+  </div>
+  {% if meter.meter_number %}<div class="muted small">Nr. {{ meter.meter_number }}</div>{% endif %}
+  {% if not rs %}
+    <p class="muted">Noch keine Ablesungen.</p>
+  {% else %}
+  <ul class="list">
+    {% for r in rs %}
+    <li>
+      <div class="main">
+        <div class="title">{{ r.day|ddate }}</div>
+        <div class="meta">
+          {% if r.id in deltas %}{{ '+' if deltas[r.id] >= 0 }}{{ deltas[r.id]|num(2) }} {{ meter.unit }} seit vorheriger{% endif %}
+          {% if r.note %} · {{ r.note }}{% endif %}
+        </div>
+        {% for w in warnings.get(r.id, []) %}<div class="badge warn" style="margin-top:4px">⚠ {{ w }}</div>{% endfor %}
+      </div>
+      <div class="amount">
+        <div class="title">{{ r.value|num(3) }}</div>
+        {% if meter.dual and r.value_nt is not none %}<div class="meta">NT {{ r.value_nt|num(3) }}</div>{% endif %}
+        <a class="small" href="/ablesungen/{{ r.id }}">bearbeiten</a>
+      </div>
+    </li>
+    {% endfor %}
+    {% if meter.installed_on %}
+    <li><div class="main"><div class="title">{{ meter.installed_on|ddate }}</div><div class="meta">Einbau / Anfangsstand</div></div>
+      <div class="amount"><div class="title">{{ meter.initial|num(3) }}</div></div></li>
+    {% endif %}
+  </ul>
+  {% endif %}
+</div>
+{% else %}
+<div class="card"><p class="muted">Noch kein Zähler für {{ LABEL[medium] }}.</p>
+  <a class="btn primary" href="/zaehler?neu={{ medium }}">Zähler anlegen</a></div>
+{% endfor %}
+{% endblock %}

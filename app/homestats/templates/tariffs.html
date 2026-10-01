@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Tarife – Zählerstände{% endblock %}
+{% block content %}
+<h1>Tarife &amp; Abschläge</h1>
+<div class="tabs">
+  {% for m in MEDIA %}<a class="{{ 'on' if m == medium }}" href="/tarife?m={{ m }}"><span class="dot c-{{ m }}"></span>{{ LABEL[m] }}</a>{% endfor %}
+</div>
+{% if error %}<div class="msg err">{{ error }}</div>{% endif %}
+{% set billed = 'kWh' if medium == 'gas' and unit in ('m³', 'm3') else unit %}
+{% set back = '/tarife?m=' ~ medium %}
+
+<div class="card">
+  <h2>Preise</h2>
+  <p class="hint" style="margin-top:0">Bruttopreise inkl. MwSt. Ein neuer Eintrag gilt ab seinem Datum bis zum nächsten – Preiswechsel werden tagesgenau anteilig gerechnet.
+    {% if medium == 'wasser' %} Wasser: Frisch- und Abwasser zusammengefasst eintragen.{% endif %}</p>
+  {% if tariffs %}
+  <ul class="list">
+    {% for t in tariffs|reverse %}
+    <li>
+      <div class="main"><div class="title">ab {{ t.valid_from|ddate }}</div>
+        <div class="meta">Grundpreis {{ t.base_month|euro }}/Monat</div></div>
+      <div class="amount"><div class="title">{{ t.price|num(4) }} €/{{ billed }}</div>
+        {% if t.price_nt is not none %}<div class="meta">NT {{ t.price_nt|num(4) }} €/{{ billed }}</div>{% endif %}
+        <form class="inline" method="post" action="/loeschen/tariffs/{{ t.id }}" onsubmit="return confirm('Tarif löschen?')">
+          <input type="hidden" name="next_url" value="{{ back }}"><button class="btn small danger" type="submit">löschen</button></form>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="msg warn">Noch kein Tarif – ohne Tarif werden keine Kosten berechnet.</p>{% endif %}
+  <details {{ 'open' if not tariffs }}>
+    <summary>Preis hinzufügen</summary>
+    <form method="post" action="/tarife/{{ medium }}/tarif">
+      <label>Gültig ab</label><input name="valid_from" type="date" value="{{ today.isoformat() }}" required>
+      <div class="fields2">
+        <div><label>Grundpreis (€/Monat)</label><input name="base_month" inputmode="decimal" required></div>
+        <div><label>Arbeitspreis{{ ' HT' if dual }} (€/{{ billed }})</label><input name="price" inputmode="decimal" required></div>
+      </div>
+      {% if dual %}<label>Arbeitspreis NT (€/{{ billed }})</label><input name="price_nt" inputmode="decimal">{% endif %}
+      <button class="btn primary block" type="submit">Preis speichern</button>
+    </form>
+  </details>
+</div>
+
+{% if medium == 'gas' %}
+<div class="card">
+  <h2>Umrechnung m³ → kWh</h2>
+  <p class="hint" style="margin-top:0">kWh = m³ × Zustandszahl × Brennwert. Beide Werte stehen auf deiner Gasrechnung.</p>
+  {% if factors %}
+  <ul class="list">
+    {% for g in factors|reverse %}
+    <li><div class="main"><div class="title">ab {{ g.valid_from|ddate }}</div>
+      <div class="meta">Zustandszahl {{ g.zustandszahl|num(4) }} · Brennwert {{ g.brennwert|num(3) }} kWh/m³</div></div>
+      <div class="amount"><div class="title">{{ g.factor|num(3) }} kWh/m³</div>
+        <form class="inline" method="post" action="/loeschen/gas_factors/{{ g.id }}" onsubmit="return confirm('Eintrag löschen?')">
+          <input type="hidden" name="next_url" value="{{ back }}"><button class="btn small danger" type="submit">löschen</button></form></div></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="msg warn">Noch keine Werte – ohne sie lassen sich Gaskosten nicht berechnen.</p>{% endif %}
+  <details {{ 'open' if not factors }}>
+    <summary>Werte hinzufügen</summary>
+    <form method="post" action="/tarife/gas/faktor">
+      <label>Gültig ab</label><input name="valid_from" type="date" value="{{ today.isoformat() }}" required>
+      <div class="fields2">
+        <div><label>Zustandszahl</label><input name="zustandszahl" inputmode="decimal" placeholder="z. B. 0,9512" required></div>
+        <div><label>Brennwert (kWh/m³)</label><input name="brennwert" inputmode="decimal" placeholder="z. B. 11,312" required></div>
+      </div>
+      <button class="btn primary block" type="submit">Speichern</button>
+    </form>
+  </details>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Abschläge</h2>
+  {% if installments %}
+  <ul class="list">
+    {% for i in installments|reverse %}
+    <li><div class="main"><div class="title">ab {{ i.valid_from|ddate }}</div></div>
+      <div class="amount"><div class="title">{{ i.amount|euro }}/Monat</div>
+        <form class="inline" method="post" action="/loeschen/installments/{{ i.id }}" onsubmit="return confirm('Abschlag löschen?')">
+          <input type="hidden" name="next_url" value="{{ back }}"><button class="btn small danger" type="submit">löschen</button></form></div></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted small">Noch kein Abschlag hinterlegt.</p>{% endif %}
+  <details {{ 'open' if not installments }}>
+    <summary>Abschlag hinzufügen</summary>
+    <form method="post" action="/tarife/{{ medium }}/abschlag">
+      <div class="fields2">
+        <div><label>Gültig ab</label><input name="valid_from" type="date" value="{{ today.isoformat() }}" required></div>
+        <div><label>Betrag (€/Monat)</label><input name="amount" inputmode="decimal" required></div>
+      </div>
+      <button class="btn primary block" type="submit">Abschlag speichern</button>
+    </form>
+  </details>
+
+  <h3>Abrechnungszeitraum</h3>
+  <form method="post" action="/tarife/{{ medium }}/zeitraum">
+    <div class="fields2">
+      <div><label>Beginnt am Tag</label>
+        <select name="start_day">{% for dd in range(1, 29) %}<option value="{{ dd }}" {{ 'selected' if dd == settings.billing_start_day }}>{{ dd }}.</option>{% endfor %}</select></div>
+      <div><label>im Monat</label>
+        <select name="start_month">{% for mm in range(1, 13) %}<option value="{{ mm }}" {{ 'selected' if mm == settings.billing_start_month }}>{{ MONTHS_LONG[mm - 1] }}</option>{% endfor %}</select></div>
+    </div>
+    <label>Anzahl Abschläge pro Zeitraum</label>
+    <select name="count">{% for n in range(12, 0, -1) %}<option value="{{ n }}" {{ 'selected' if n == settings.installments_per_period }}>{{ n }}</option>{% endfor %}</select>
+    <p class="hint">Manche Versorger buchen nur 11 Abschläge; der letzte Monat fällt dann weg.</p>
+    <button class="btn block" type="submit">Zeitraum speichern</button>
+  </form>
+</div>
+{% endblock %}
