@@ -2,7 +2,7 @@ manifestVersion: 1
 id: homestats-bankimport
 category: finance
 name: Bank-Import
-version: "0.2.0"
+version: "0.3.0"
 tagline: Kontoauszüge per Upload direkt in Firefly III oder Sure übernehmen
 icon: https://raw.githubusercontent.com/schriftlich/homestats/main/homestats-bankimport/icon.svg
 description: >-
@@ -22,10 +22,7 @@ description: >-
 
   - Unterstützt bisher: DKB
 releaseNotes: >-
-  - Kategorie-Vorschläge aus bisherigen Buchungen
-
-
-    - Standard-Kategorien per Knopf anlegen
+  - Sure Integration
 
 developer: schriftlich
 website: https://github.com/schriftlich/homestats
