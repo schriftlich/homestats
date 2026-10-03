@@ -2,7 +2,7 @@ manifestVersion: 1
 id: homestats-tagger
 category: media
 name: MP3-Tagger
-version: "0.1.0"
+version: "0.1.1"
 tagline: MeTube-Downloads sauber taggen und in Navidrome oder Audiobookshelf einsortieren
 icon: https://raw.githubusercontent.com/schriftlich/homestats/main/homestats-tagger/icon.svg
 description: >-
