@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen – Gemeindeverzeichnis{% endblock %}
+{% block content %}
+<h1>Einstellungen</h1>
+{% if ok %}<div class="msg ok">{{ ok }}</div>{% endif %}
+{% if result %}<div class="msg ok">{{ result }}</div>{% endif %}
+{% if error %}<div class="msg err">{{ error }}</div>{% endif %}
+<form class="card" method="post" action="/einstellungen">
+  <h2>PDF</h2>
+  <label for="church_name">Name der Gemeinde</label>
+  <input id="church_name" name="church_name" value="{{ settings.church_name }}">
+  <label for="pdf_note">Hinweis in der Fußzeile</label>
+  <input id="pdf_note" name="pdf_note" value="{{ settings.pdf_note }}" maxlength="150">
+  <button class="btn primary block" type="submit">Speichern</button>
+</form>
+
+<div class="card">
+  <h2>Backup herunterladen</h2>
+  <p class="muted">ZIP-Datei mit je einer CSV für Haushalte, Personen und Einstellungen. Lässt sich direkt in Excel oder LibreOffice öffnen. Enthält alle persönlichen Daten – sicher aufbewahren.</p>
+  <a class="btn primary" href="/daten/export">Backup herunterladen</a>
+</div>
+
+<div class="card">
+  <h2>Backup wiederherstellen</h2>
+  <div class="msg warn">Achtung: Der Import <strong>ersetzt alle vorhandenen Daten</strong>. Lade vorher sicherheitshalber ein Backup herunter.</div>
+  <form method="post" action="/daten/import" enctype="multipart/form-data">
+    <label for="file">Backup-Datei (.zip)</label>
+    <input id="file" name="file" type="file" accept=".zip,application/zip" required>
+    <label class="check"><input type="checkbox" name="confirm" value="1" required> Ja, alle vorhandenen Daten ersetzen</label>
+    <button class="btn primary block" type="submit">Importieren</button>
+  </form>
+</div>
+{% endblock %}

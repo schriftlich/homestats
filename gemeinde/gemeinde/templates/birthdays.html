@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Geburtstage – Gemeindeverzeichnis{% endblock %}
+{% block content %}
+<h1>Geburtstage</h1>
+{% for label, items in months %}
+<div class="card">
+  <h2>{{ label }}</h2>
+  <ul class="list">
+  {% for b in items %}
+    <li><a class="main plain" href="/haushalt/{{ b.household.id }}"><div class="title">{{ b.name }}</div>
+      <div class="meta">{{ WEEKDAYS[b.date.weekday()] }}, {{ b.date|ddate }}</div></a>
+      <div class="amount">wird {{ b.age }}{% if b.in_days == 0 %} <span class="badge good">heute</span>{% endif %}</div></li>
+  {% endfor %}
+  </ul>
+</div>
+{% else %}
+<p class="muted">Noch keine Geburtstage erfasst.</p>
+{% endfor %}
+{% endblock %}

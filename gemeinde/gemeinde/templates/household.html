@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ h.name }} – Gemeindeverzeichnis{% endblock %}
+{% block content %}
+<p class="small"><a href="/">← Alle Haushalte</a></p>
+{% if ok %}<div class="msg ok">{{ ok }}</div>{% endif %}
+<div class="card">
+  <div class="row"><h1 style="margin:0">{{ h.name }}</h1><span class="spacer"></span>
+    <a class="btn small" href="/haushalt/{{ h.id }}/bearbeiten">Bearbeiten</a></div>
+  <dl class="kv">
+    <dt>Anschrift</dt><dd>{{ h.street or '–' }}{% if h.place %}<br>{{ h.place }}{% endif %}</dd>
+    <dt>Festnetz</dt><dd>{% if h.phone %}<a href="tel:{{ h.phone|replace(' ', '') }}">{{ h.phone }}</a>{% else %}–{% endif %}</dd>
+  </dl>
+  {% if h.note %}<p class="hint">{{ h.note }}</p>{% endif %}
+</div>
+
+<div class="card">
+  <div class="row"><h2 style="margin:0">Personen</h2><span class="spacer"></span>
+    <a class="btn small" href="/person/neu?haushalt={{ h.id }}">+ Person</a></div>
+  {% if h.persons %}
+  <ul class="list">
+  {% for p in h.persons %}
+    <li class="{{ 'off' if not p.active }}">
+      <a class="main plain" href="/person/{{ p.id }}">
+        <div class="title">{{ h.full_name(p) }}
+          {% if p.member %}<span class="badge member">Mitglied{% if p.member_since %} seit {{ p.member_since.year }}{% endif %}</span>{% endif %}
+          {% if p.child %}<span class="badge">Kind</span>{% endif %}
+          {% if not p.active %}<span class="badge">ausgetreten {{ p.left_on|ddate }}</span>
+          {% elif not p.consent %}<span class="badge warn">keine Einwilligung</span>{% endif %}</div>
+        <div class="meta">{{ [p.birthday|ddate, p.mobile, p.email]|select|join(' · ') or 'keine Angaben' }}</div>
+      </a>
+    </li>
+  {% endfor %}
+  </ul>
+  {% else %}<p class="muted small">Noch keine Personen.</p>{% endif %}
+  {% if h.active_persons|rejectattr('consent')|list %}
+  <form method="post" action="/haushalt/{{ h.id }}/einwilligung" onsubmit="return confirm('Liegt die unterschriebene Einwilligung für alle Personen dieses Haushalts vor?')">
+    <button class="btn block" type="submit">Einwilligung für alle eintragen</button>
+  </form>
+  <p class="hint">Nur Personen mit Einwilligung erscheinen in der PDF-Liste. Bei Kindern willigen die Eltern ein.</p>
+  {% endif %}
+</div>
+{% endblock %}

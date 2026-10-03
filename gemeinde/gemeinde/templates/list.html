@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Mitgliederliste – Gemeindeverzeichnis{% endblock %}
+{% block content %}
+<h1>Mitgliederliste (PDF)</h1>
+<form class="card" method="get" action="/liste.pdf" target="_blank">
+  <p style="margin-top:0">Die Liste enthält <strong>{{ n_households }} Haushalte</strong> mit <strong>{{ n_persons }} Personen</strong>, sortiert nach Familiennamen. Kinder stehen bei ihrer Familie, Mitglieder sind fett gedruckt.</p>
+  <label class="check"><input type="checkbox" name="email" value="1" checked> E-Mail-Adressen aufnehmen</label>
+  <label class="check"><input type="checkbox" name="geburtstage" value="1" checked> Geburtstagsübersicht nach Monaten anhängen</label>
+  <button class="btn primary block" type="submit">PDF erstellen</button>
+  {% if not settings.church_name %}<p class="hint">Tipp: Unter <a href="/einstellungen">Einstellungen</a> den Namen der Gemeinde für die Kopfzeile eintragen.</p>{% endif %}
+</form>
+
+{% if missing %}
+<div class="card">
+  <h2>Nicht in der Liste: {{ missing|length }} ohne Einwilligung</h2>
+  <ul class="list">
+  {% for h, p in missing %}
+    <li><a class="main plain" href="/person/{{ p.id }}"><div class="title">{{ h.full_name(p) }}</div>
+      <div class="meta">{{ h.name }}{% if p.child %} · Kind{% endif %}</div></a></li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

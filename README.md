@@ -1,14 +1,17 @@
 # HomeStats – eigene Apps für Umbrel
 
-Dieses Repo ist ein **Umbrel Community App Store** mit zwei Apps:
+Dieses Repo ist ein **Umbrel Community App Store** mit drei Apps:
 
 - **Zählerstände** – Zählerstände für Gas, Wasser und Strom erfassen und auswerten: Verbrauch pro Monat, Kosten, Vorjahresvergleich und eine Hochrechnung gegen deine Abschläge (Nachzahlung oder Guthaben).
+- **Gemeindeverzeichnis** – Haushalte und Personen der Gemeinde pflegen, Mitgliederliste als PDF. Siehe [Gemeindeverzeichnis](#gemeindeverzeichnis).
 - **Bank-Import** – Kontoauszug (CSV) hochladen, Vorschau prüfen, Buchungen direkt in Firefly III übernehmen. Siehe [Bank-Import](#bank-import).
 
 ```
 umbrel-app-store.yml              Store-ID "homestats"
 homestats-zaehler/                Umbrel-Paket Zählerstände (Manifest, Compose, Icon)
 app/                              Quellcode Zählerstände (FastAPI, SQLite, Jinja2/HTMX, Chart.js) + Dockerfile
+homestats-gemeinde/               Umbrel-Paket Gemeindeverzeichnis
+gemeinde/                         Quellcode Gemeindeverzeichnis (FastAPI, SQLite, ReportLab) + Dockerfile
 homestats-bankimport/             Umbrel-Paket Bank-Import
 bankimport/                       Quellcode Bank-Import (Flask) + Dockerfile
 .github/workflows/                CI (Tests) und Releases (Multi-Arch-Images nach ghcr.io)
@@ -108,3 +111,13 @@ cd bankimport
 pip install -r requirements-dev.txt
 python -m pytest -q
 ```
+
+## Gemeindeverzeichnis
+
+Haushalte (Familienname, Anschrift, Festnetz) mit den Personen darin (Geburtstag, Handy, E-Mail, Mitglied ja/nein, Kind). Daraus entsteht per Klick die Mitgliederliste als PDF.
+
+- **Einwilligung:** Nur Personen mit gesetztem Haken „Einwilligung liegt vor“ kommen ins PDF. Alle anderen bleiben intern gespeichert und werden unter *Liste* aufgeführt.
+- **Austritt, Wegzug, Tod:** Datum bei der Person setzen statt löschen. Sie verschwindet aus Liste und Geburtstagen, die Historie bleibt.
+- **Backup:** *Einstellungen → Backup herunterladen* (ZIP mit CSV). Enthält alle persönlichen Daten.
+- Lokal testen: `cd gemeinde && GEMEINDE_DEMO=1 uvicorn gemeinde.main:app --reload` (legt Beispieldaten an).
+- Release: Tag `gemeinde-v1.2.3` (Workflow „Release Gemeindeverzeichnis“).

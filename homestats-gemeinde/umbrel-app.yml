@@ -1,0 +1,40 @@
+manifestVersion: 1
+id: homestats-gemeinde
+category: social
+name: Gemeindeverzeichnis
+version: "0.0.0"
+tagline: Mitglieder und Familien der Gemeinde pflegen – Mitgliederliste als PDF
+icon: https://raw.githubusercontent.com/schriftlich/homestats/main/homestats-gemeinde/icon.svg
+description: >-
+  Kleines Mitgliederverzeichnis für die Gemeinde: Haushalte mit Anschrift und
+  Festnetz, darin die einzelnen Personen mit Geburtstag, Handy und E-Mail.
+  Kinder stehen bei ihrer Familie, auch wenn sie (noch) keine Mitglieder sind.
+  Die App ist durch die Umbrel-Anmeldung geschützt.
+
+
+  - Mitgliederliste als PDF nach Haushalten, Mitglieder fett, optional mit Geburtstagsübersicht
+
+  - Nur Personen mit Einwilligung erscheinen in der Liste
+
+  - Austritt per Datum, ohne Daten zu löschen
+
+  - Geburtstage der nächsten Tage auf der Startseite
+
+  - CSV-Backup und Wiederherstellung
+releaseNotes: ""
+
+developer: schriftlich
+website: https://github.com/schriftlich/homestats
+dependencies: []
+repo: https://github.com/schriftlich/homestats
+support: https://github.com/schriftlich/homestats/issues
+
+port: 8745
+gallery: []
+path: ""
+
+defaultUsername: ""
+defaultPassword: ""
+
+submitter: schriftlich
+submission: https://github.com/schriftlich/homestats

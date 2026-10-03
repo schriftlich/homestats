@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Haushalt – Gemeindeverzeichnis{% endblock %}
+{% block content %}
+<h1>{{ 'Haushalt bearbeiten' if h.id else 'Neuer Haushalt' }}</h1>
+{% if error %}<div class="msg err">{{ error }}</div>{% endif %}
+<form class="card" method="post" action="/haushalt">
+  <input type="hidden" name="id" value="{{ h.id or '' }}">
+  <label for="name">Familienname</label>
+  <input id="name" name="name" value="{{ h.name }}" required autofocus placeholder="z. B. Müller">
+  <p class="hint">Gilt als Nachname für alle Personen, wenn bei der Person nichts anderes steht.</p>
+  <label for="street">Straße und Hausnummer</label>
+  <input id="street" name="street" value="{{ h.street }}" autocomplete="street-address">
+  <div class="fields2" style="grid-template-columns:1fr 2fr">
+    <div><label for="zip">PLZ</label><input id="zip" name="zip" value="{{ h.zip }}" inputmode="numeric" autocomplete="postal-code"></div>
+    <div><label for="city">Ort</label><input id="city" name="city" value="{{ h.city }}" autocomplete="address-level2"></div>
+  </div>
+  <label for="phone">Festnetz (optional)</label>
+  <input id="phone" name="phone" value="{{ h.phone }}" type="tel">
+  <label for="note">Interne Notiz (nicht in der Liste)</label>
+  <textarea id="note" name="note" rows="2">{{ h.note }}</textarea>
+  <button class="btn primary block" type="submit">{{ 'Speichern' if h.id else 'Weiter: Personen erfassen' }}</button>
+  <a class="btn block" href="{{ '/haushalt/%d' % h.id if h.id else '/' }}">Abbrechen</a>
+</form>
+{% if h.id %}
+<form method="post" action="/haushalt/{{ h.id }}/loeschen" onsubmit="return confirm('Haushalt und ALLE Personen darin endgültig löschen? Bei Austritt besser bei der Person ein Austrittsdatum setzen.')">
+  <button class="btn danger block" type="submit">Haushalt löschen</button>
+</form>
+{% endif %}
+{% endblock %}

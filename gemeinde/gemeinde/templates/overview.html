@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid4">
+  <div class="card tile"><div class="label">Haushalte</div><div class="value">{{ stats.households }}</div></div>
+  <div class="card tile"><div class="label">Personen</div><div class="value">{{ stats.persons }}</div><div class="sub">davon {{ stats.children }} Kinder</div></div>
+  <div class="card tile"><div class="label">Mitglieder</div><div class="value">{{ stats.members }}</div></div>
+  <a class="card tile" href="/liste"><div class="label">Ohne Einwilligung</div><div class="value {{ 'bad' if stats.no_consent }}">{{ stats.no_consent }}</div><div class="sub">nicht in der Liste</div></a>
+</div>
+
+{% if birthdays %}
+<div class="card">
+  <h2>Geburtstage in den nächsten 14 Tagen</h2>
+  <ul class="list">
+  {% for b in birthdays %}
+    <li><div class="main"><div class="title">{{ b.name }}</div>
+      <div class="meta">{{ WEEKDAYS[b.date.weekday()] }}, {{ b.date|ddate }} · wird {{ b.age }}</div></div>
+      <div class="amount">{% if b.in_days == 0 %}<span class="badge good">heute</span>{% elif b.in_days == 1 %}morgen{% else %}in {{ b.in_days }} Tagen{% endif %}</div></li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form class="row search" method="get" action="/">
+  <input name="q" value="{{ q }}" placeholder="Suchen: Name, Ort, Straße …" type="search" aria-label="Suchen">
+  {% if alle %}<input type="hidden" name="alle" value="1">{% endif %}
+</form>
+
+<div class="card">
+  {% if households %}
+  <ul class="list">
+  {% for h in households %}
+    <li>
+      <a class="main plain" href="/haushalt/{{ h.id }}">
+        <div class="title">{{ h.name }}{% if not h.active_persons and h.persons %} <span class="badge">ehemalig</span>{% endif %}</div>
+        <div class="meta">{{ [h.street, h.place]|select|join(', ') or 'keine Anschrift' }}</div>
+        <div class="people">
+          {% for p in h.persons %}<span class="chip {{ 'member' if p.member }} {{ 'off' if not p.active }}" title="{{ 'Mitglied' if p.member else 'kein Mitglied' }}{{ ', ohne Einwilligung' if not p.consent }}">{{ p.first_name }}{% if not p.consent and p.active %}<i class="dotwarn"></i>{% endif %}</span>{% endfor %}
+          {% if not h.persons %}<span class="muted small">noch keine Personen</span>{% endif %}
+        </div>
+      </a>
+    </li>
+  {% endfor %}
+  </ul>
+  {% elif q %}
+  <p class="muted">Nichts gefunden für „{{ q }}“.</p>
+  {% else %}
+  <p class="muted">Noch keine Haushalte. Lege über <strong>+ Haushalt</strong> den ersten an.</p>
+  {% endif %}
+</div>
+<p class="muted small legend-line"><span class="chip member">Name</span> Mitglied &nbsp; <span class="chip">Name</span> kein Mitglied &nbsp; <span class="chip">Name<i class="dotwarn"></i></span> ohne Einwilligung
+{% if hidden and not alle %} · <a href="/?alle=1">{{ hidden }} ehemalige Haushalte zeigen</a>{% elif alle %} · <a href="/">ehemalige ausblenden</a>{% endif %}</p>
+{% endblock %}
