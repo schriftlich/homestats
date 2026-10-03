@@ -11,6 +11,7 @@ import requests
 from .banks import Booking, Statement
 
 MAX_DESC = 500  # Firefly erlaubt 1000 Zeichen, wir bleiben deutlich darunter
+HISTORY_DAYS = 400  # so weit zurück wird für Duplikate und Kategorie-Vorschläge gelesen
 
 
 class FireflyError(Exception):
@@ -63,6 +64,15 @@ class Firefly:
             out.extend(grp["attributes"]["transactions"])
         return out
 
+    def categories(self):
+        """Namen aller Kategorien, alphabetisch."""
+        return sorted((c["attributes"]["name"] for c in self._get_all("/categories")), key=str.lower)
+
+    def create_category(self, name):
+        r = self.s.post(f"{self.url}/api/v1/categories", json={"name": name}, timeout=self.timeout)
+        if not r.ok:
+            raise FireflyError(f"Kategorie „{name}“ konnte nicht angelegt werden: {r.status_code} {r.text[:200]}")
+
     def create(self, payload):
         r = self.s.post(f"{self.url}/api/v1/transactions", json=payload, timeout=self.timeout)
         if r.ok:
@@ -100,6 +110,52 @@ def external_id(st: Statement, b: Booking) -> str:
     return "bankimport-" + hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
+def _name(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "")).strip().lower()
+
+
+class CategoryLearner:
+    """Merkt sich, welche Kategorie eine Gegenpartei bisher bekommen hat.
+
+    Vorgeschlagen wird nur, wenn die Historie eindeutig ist: Alle bisherigen
+    Buchungen dieser Gegenpartei haben dieselbe Kategorie. Sammel-Gegenparteien
+    wie PayPal oder die Kreditkarten-IBAN bekommen so keinen falschen Vorschlag.
+    """
+
+    def __init__(self, history):
+        self.by_name = {}
+        self.by_iban = {}
+        iban_names = {}
+        for t in history:
+            if t.get("type") not in ("withdrawal", "deposit"):
+                continue
+            if t["type"] == "withdrawal":
+                name, iban = t.get("destination_name"), t.get("destination_iban")
+            else:
+                name, iban = t.get("source_name"), t.get("source_iban")
+            cat = t.get("category_name")
+            n = _name(name)
+            iban = (iban or "").replace(" ", "").upper()
+            if iban:
+                iban_names.setdefault(iban, set()).add(n)
+            if not cat:
+                continue
+            if n:
+                self.by_name.setdefault(n, set()).add(cat)
+            if iban:
+                self.by_iban.setdefault(iban, set()).add(cat)
+        # IBANs, hinter denen verschiedene Gegenparteien stehen, sind nicht aussagekräftig
+        for iban, names in iban_names.items():
+            if len(names) > 1:
+                self.by_iban.pop(iban, None)
+
+    def suggest(self, name: str, iban: str):
+        for cats in (self.by_name.get(_name(name)), self.by_iban.get(iban or "")):
+            if cats and len(cats) == 1:
+                return next(iter(cats))
+        return None
+
+
 @dataclass
 class PlannedRow:
     booking: Booking
@@ -107,6 +163,7 @@ class PlannedRow:
     status: str          # neu | duplikat | vorgemerkt
     other: str           # Anzeige: Gegenpartei bzw. eigenes Konto
     payload: dict = field(default_factory=dict)
+    category: str = ""   # Vorschlag aus der Historie
 
 
 @dataclass
@@ -135,9 +192,13 @@ def build_plan(ff: Firefly, st: Statement, tag: str = "Bank-Import") -> Plan:
 
     start = min(b.date for b in st.bookings) - timedelta(days=1)
     end = max(b.date for b in st.bookings) + timedelta(days=1)
+    history = ff.account_transactions(acc_id, end - timedelta(days=HISTORY_DAYS), end)
+    learner = CategoryLearner(history)
     existing = Counter()
     existing_ext = set()
-    for t in ff.account_transactions(acc_id, start, end):
+    for t in history:
+        if not (start.isoformat() <= t["date"][:10] <= end.isoformat()):
+            continue
         existing[_key_from_ff(t)] += 1
         if t.get("external_id"):
             existing_ext.add(t["external_id"])
@@ -165,8 +226,11 @@ def build_plan(ff: Firefly, st: Statement, tag: str = "Bank-Import") -> Plan:
         else:
             status = "neu"
 
+        cat = ""
+        if kind != "transfer" and status == "neu":
+            cat = learner.suggest(b.counterparty, b.iban) or ""
         rows.append(PlannedRow(b, kind, status, other,
-                               _payload(b, kind, acc_id, other_acc, ext, tag)))
+                               _payload(b, kind, acc_id, other_acc, ext, tag), cat))
     return Plan(acc_id, acc_name, st, rows)
 
 
@@ -217,9 +281,18 @@ def _payload(b: Booking, kind, acc_id, other_acc, ext, tag):
     }
 
 
-def run_import(ff: Firefly, plan: Plan):
+def run_import(ff: Firefly, plan: Plan, categories=None):
+    """categories: {Zeilenindex in plan.rows: Kategoriename oder ""}; None = Vorschläge übernehmen."""
     results = []
-    for r in plan.new_rows:
+    for i, r in enumerate(plan.rows):
+        if r.status != "neu":
+            continue
+        cat = r.category if categories is None else categories.get(i, "")
+        split = r.payload["transactions"][0]
+        if cat and r.kind != "transfer":
+            split["category_name"] = cat
+        else:
+            split.pop("category_name", None)
         ok, info = ff.create(r.payload)
         if not ok and "iban" in str(info).lower():
             # Firefly lehnt manche Gegen-IBANs ab (Format, Kontotyp) – dann ohne IBAN anlegen

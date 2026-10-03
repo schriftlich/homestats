@@ -13,6 +13,12 @@ from .firefly import Firefly, FireflyError, build_plan, run_import
 VERSION = os.environ.get("BANKIMPORT_VERSION", "dev")
 TAG = os.environ.get("IMPORT_TAG", "Bank-Import")
 
+DEFAULT_CATEGORIES = [
+    "Wohnen", "Energie", "Lebensmittel", "Haushalt", "Mobilität", "Kommunikation",
+    "Versicherungen", "Kinder", "Gesundheit", "Gemeinde & Spenden", "Freizeit & Urlaub",
+    "Abos & Software", "Einkommen", "Gebühren & Zinsen",
+]
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 
@@ -98,6 +104,8 @@ td.amt{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .alert.ok{background:var(--ok);color:var(--ok-t)}
 .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
 tr.dim td{opacity:.55}
+select{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font-size:14px;max-width:160px}
+.learned{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 footer{color:var(--muted);font-size:12px;text-align:center;margin-top:30px}
 </style></head><body>
 <header><div class="bar">
@@ -141,7 +149,12 @@ SETTINGS = """<div class="card"><h2>Verbindung zu Firefly III</h2>
 {% if accounts %}<div class="tbl"><table><tr><th>Konto</th><th>IBAN</th></tr>
 {% for iban, (id, name) in accounts.items() %}<tr><td>{{ name }}</td><td>{{ iban }}</td></tr>{% endfor %}
 </table></div>{% else %}<p class="sub">Keine Bestandskonten mit IBAN gefunden. Trage bei deinen Konten in Firefly die IBAN ein – daran erkennt Bank-Import, wohin gebucht wird.</p>{% endif %}
-</div>{% endif %}"""
+</div>{% endif %}
+<div class="card"><h2>Kategorien</h2>
+<p class="sub">Legt in Firefly die Standard-Kategorien an, die noch fehlen. Bestehende bleiben unverändert.</p>
+<p class="sub" style="margin-top:8px">{{ default_categories|join(" · ") }}</p>
+<form method="post" action="{{ url_for('create_categories') }}"><div class="actions">
+<button class="sec" type="submit">Fehlende Kategorien anlegen</button></div></form></div>"""
 
 PREVIEW = """<div class="card"><h2>Vorschau – {{ plan.account_name }} ({{ plan.statement.bank }})</h2>
 <div class="stats">
@@ -149,16 +162,24 @@ PREVIEW = """<div class="card"><h2>Vorschau – {{ plan.account_name }} ({{ plan
 <span class="pill duplikat">{{ n_dup }} schon vorhanden</span>
 {% if n_pend %}<span class="pill vorgemerkt">{{ n_pend }} vorgemerkt (werden übersprungen)</span>{% endif %}
 </div>
-<div class="tbl"><table><tr><th>Datum</th><th>Gegenpartei / Zweck</th><th>Art</th><th style="text-align:right">Betrag</th><th>Status</th></tr>
-{% for r in plan.rows %}
+{% if n_new and n_learned %}<p class="sub" style="margin-bottom:12px">{{ n_learned }} von {{ n_new }} neuen Buchungen haben einen Kategorie-Vorschlag aus deinen bisherigen Buchungen.</p>{% endif %}
+<form method="post" action="{{ url_for('do_import', pid=pid) }}">
+<div class="tbl"><table><tr><th>Datum</th><th>Gegenpartei / Zweck</th><th>Art</th><th style="text-align:right">Betrag</th><th>Kategorie</th><th>Status</th></tr>
+{% for r in plan.rows %}{% set i = loop.index0 %}
 <tr class="{{ '' if r.status=='neu' else 'dim' }}">
 <td>{{ r.booking.date.strftime('%d.%m.%Y') }}</td>
 <td>{{ r.other }}<div class="desc" title="{{ r.booking.description }}">{{ r.booking.description }}</div></td>
 <td>{{ {'withdrawal':'Ausgabe','deposit':'Einnahme','transfer':'Umbuchung'}[r.kind] }}</td>
 <td class="amt {{ 'out' if r.booking.amount < 0 else 'in' }}">{{ fmt(r.booking.amount) }}</td>
+<td>{% if r.status == 'neu' and r.kind != 'transfer' %}
+<select name="cat_{{ i }}"><option value="">– keine –</option>
+{% for c in categories %}<option value="{{ c }}" {{ 'selected' if c == r.category }}>{{ c }}</option>{% endfor %}
+{% if r.category and r.category not in categories %}<option value="{{ r.category }}" selected>{{ r.category }}</option>{% endif %}
+</select>{% if r.category %}<span class="learned">gelernt</span>{% endif %}
+{% endif %}</td>
 <td><span class="pill {{ r.status }}">{{ r.status }}</span></td></tr>
 {% endfor %}</table></div>
-<form method="post" action="{{ url_for('do_import', pid=pid) }}"><div class="actions">
+<div class="actions">
 {% if n_new %}<button type="submit">{{ n_new }} Buchung{{ 'en' if n_new != 1 }} importieren</button>{% endif %}
 <a class="btn sec" href="{{ url_for('index') }}">Abbrechen</a></div></form></div>"""
 
@@ -213,7 +234,29 @@ def settings_page():
                 error, notice = f"Verbindung fehlgeschlagen: {e}", None
     cfg = settings.load()
     return page(SETTINGS, active="settings", error=error, notice=notice, cfg=cfg,
-                has_token=bool(cfg["firefly_token"]), accounts=accounts)
+                has_token=bool(cfg["firefly_token"]), accounts=accounts,
+                default_categories=DEFAULT_CATEGORIES)
+
+
+@app.post("/einstellungen/kategorien")
+def create_categories():
+    cfg = settings.load()
+    error = notice = None
+    try:
+        client = ff()
+        existing = {c.lower() for c in client.categories()}
+        missing = [c for c in DEFAULT_CATEGORIES if c.lower() not in existing]
+        for name in missing:
+            client.create_category(name)
+        notice = (f"{len(missing)} Kategorien angelegt: {', '.join(missing)}." if missing
+                  else "Alle Standard-Kategorien sind schon vorhanden.")
+    except NotConfigured:
+        error = "Bitte zuerst den Zugangsschlüssel speichern."
+    except Exception as e:
+        error = f"Kategorien konnten nicht angelegt werden: {e}"
+    return page(SETTINGS, active="settings", error=error, notice=notice, cfg=cfg,
+                has_token=bool(cfg["firefly_token"]), accounts=None,
+                default_categories=DEFAULT_CATEGORIES)
 
 
 @app.post("/vorschau")
@@ -221,9 +264,15 @@ def preview():
     f = request.files.get("file")
     if not f or not f.filename:
         return redirect(url_for("index", error="Bitte eine Datei auswählen."))
+    categories = []
     try:
         st = parse(f.read())
-        plan = build_plan(ff(), st, TAG)
+        client = ff()
+        plan = build_plan(client, st, TAG)
+        try:
+            categories = client.categories()
+        except Exception:
+            categories = []
     except NotConfigured:
         return page(SETUP)
     except (ParseError, FireflyError) as e:
@@ -235,7 +284,9 @@ def preview():
         _cleanup()
         PLANS[pid] = (time.time(), plan)
     n = lambda s: sum(1 for r in plan.rows if r.status == s)  # noqa: E731
-    return page(PREVIEW, plan=plan, pid=pid, n_new=n("neu"), n_dup=n("duplikat"), n_pend=n("vorgemerkt"))
+    n_learned = sum(1 for r in plan.rows if r.status == "neu" and r.category)
+    return page(PREVIEW, plan=plan, pid=pid, n_new=n("neu"), n_dup=n("duplikat"),
+                n_pend=n("vorgemerkt"), n_learned=n_learned, categories=categories)
 
 
 @app.post("/import/<pid>")
@@ -245,7 +296,10 @@ def do_import(pid):
     if not item:
         return redirect(url_for("index", error="Die Vorschau ist abgelaufen. Bitte die Datei erneut hochladen."))
     try:
-        results = run_import(ff(), item[1])
+        plan = item[1]
+        choices = {i: request.form.get(f"cat_{i}", "").strip()
+                   for i, r in enumerate(plan.rows) if r.status == "neu"}
+        results = run_import(ff(), plan, choices)
     except Exception as e:
         return page(UPLOAD, error=f"Import abgebrochen: {e}")
     ok = sum(1 for _, good, _ in results if good)

@@ -20,9 +20,16 @@ CSV = f'''"Girokonto";"DE00111100000000000001"
 
 
 class FakeFirefly:
-    def __init__(self, existing=()):
+    def __init__(self, existing=(), cats=("Energie",)):
         self.existing = list(existing)
         self.created = []
+        self.cats = list(cats)
+
+    def categories(self):
+        return sorted(self.cats)
+
+    def create_category(self, name):
+        self.cats.append(name)
 
     def asset_accounts(self):
         return {"DE00111100000000000001": ("1", "DKB Girokonto"),
@@ -116,3 +123,64 @@ def test_web_flow(client):
 def test_cross_site_post_rejected(client):
     r = client.post("/einstellungen", data={}, headers={"Sec-Fetch-Site": "cross-site"})
     assert r.status_code == 403
+
+
+HISTORY = [
+    # ENERGIE GMBH immer „Energie“ -> eindeutig
+    {"type": "withdrawal", "date": "2026-08-02T00:00:00+02:00", "amount": "116", "description": "ABSCHLAG 08/26",
+     "destination_name": "Energie GmbH", "destination_iban": "DE63600501010002011963", "category_name": "Energie"},
+    {"type": "withdrawal", "date": "2026-09-02T00:00:00+02:00", "amount": "116", "description": "ABSCHLAG 09/26",
+     "destination_name": "ENERGIE  GMBH", "destination_iban": "DE63600501010002011963", "category_name": "Energie"},
+    # PayPal: gleiche Gegenpartei, verschiedene Kategorien -> kein Vorschlag
+    {"type": "withdrawal", "date": "2026-09-05T00:00:00+02:00", "amount": "20", "description": "Kauf",
+     "destination_name": "PayPal Europe", "destination_iban": "LU00PP", "category_name": "Haushalt"},
+    {"type": "withdrawal", "date": "2026-09-06T00:00:00+02:00", "amount": "30", "description": "Kauf",
+     "destination_name": "PayPal Europe", "destination_iban": "LU00PP", "category_name": "Kinder"},
+    # Gehalt
+    {"type": "deposit", "date": "2026-09-02T00:00:00+02:00", "amount": "3283.3", "description": "LOHN / GEHALT 08/26",
+     "source_name": "FIRMA GBR", "source_iban": "DE70602500100015093552", "category_name": "Einkommen"},
+]
+
+
+def test_learner():
+    lr = firefly.CategoryLearner(HISTORY)
+    assert lr.suggest("ENERGIE GMBH", "") == "Energie"
+    assert lr.suggest("Unbekannt", "DE63600501010002011963") == "Energie"   # über IBAN
+    assert lr.suggest("PayPal Europe", "LU00PP") is None                     # mehrdeutig
+    assert lr.suggest("Firma GbR", "") == "Einkommen"
+
+
+def test_plan_suggests_and_import_uses_choice():
+    ff = FakeFirefly(existing=HISTORY)
+    plan = firefly.build_plan(ff, banks.parse(CSV))
+    cats = {r.booking.line: r.category for r in plan.rows}
+    assert [r.category for r in plan.rows] == ["", "Einkommen", "Energie", "", ""]
+    assert cats  # Zeilennummern vorhanden
+    # Nutzer ändert Energie -> Wohnen und lässt den Rest
+    choices = {i: r.category for i, r in enumerate(plan.rows) if r.status == "neu"}
+    choices[2] = "Wohnen"
+    firefly.run_import(ff, plan, choices)
+    by_desc = {c["description"][:10]: c for c in ff.created}
+    assert by_desc["ABSCHLAG 1"]["category_name"] == "Wohnen"
+    assert by_desc["LOHN / GEH"]["category_name"] == "Einkommen"
+    assert "category_name" not in by_desc["Sparen"]       # Umbuchung ohne Kategorie
+
+
+def test_web_categories(client):
+    client.post("/einstellungen", data={"firefly_token": "abc", "action": "save"})
+    html = client.post("/einstellungen/kategorien").get_data(as_text=True)
+    assert "13 Kategorien angelegt" in html  # „Energie“ gab es schon
+    html = client.post("/einstellungen/kategorien").get_data(as_text=True)
+    assert "schon vorhanden" in html
+
+    import io
+    client.fake.existing = HISTORY
+    html = client.post("/vorschau", data={"file": (io.BytesIO(CSV), "dkb.csv")},
+                       content_type="multipart/form-data").get_data(as_text=True)
+    assert "gelernt" in html and 'name="cat_2"' in html
+    pid = html.split("/import/")[1].split('"')[0]
+    html = client.post(f"/import/{pid}", data={"cat_2": "Haushalt", "cat_3": "Gebühren & Zinsen"}).get_data(as_text=True)
+    assert "4 importiert" in html
+    created = {c["description"][:10]: c.get("category_name") for c in client.fake.created}
+    assert created["ABSCHLAG 1"] == "Haushalt"
+    assert created["Abrechnung"] == "Gebühren & Zinsen"
