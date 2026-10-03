@@ -3,11 +3,11 @@ id: homestats-bankimport
 category: finance
 name: Bank-Import
 version: "0.2.0"
-tagline: Kontoauszüge per Upload direkt in Firefly III übernehmen
+tagline: Kontoauszüge per Upload direkt in Firefly III oder Sure übernehmen
 icon: https://raw.githubusercontent.com/schriftlich/homestats/main/homestats-bankimport/icon.svg
 description: >-
   CSV-Export der Bank hochladen, Vorschau prüfen, mit einem Klick nach
-  Firefly III übernehmen. Die App ist durch die Umbrel-Anmeldung geschützt.
+  Firefly III oder Sure übernehmen. Die App ist durch die Umbrel-Anmeldung geschützt.
 
 
   - Erkennt das eigene Konto automatisch an der IBAN
@@ -18,7 +18,7 @@ description: >-
 
   - Überlange Verwendungszwecke werden gekürzt, der volle Text landet in der Notiz
 
-  - Firefly-Regeln werden beim Import angewendet
+  - Kategorien werden aus bisherigen Buchungen gelernt und vorgeschlagen
 
   - Unterstützt bisher: DKB
 releaseNotes: >-
@@ -29,8 +29,7 @@ releaseNotes: >-
 
 developer: schriftlich
 website: https://github.com/schriftlich/homestats
-dependencies:
-  - firefly-iii
+dependencies: []
 repo: https://github.com/schriftlich/homestats
 support: https://github.com/schriftlich/homestats/issues
 

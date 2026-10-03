@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 DEFAULT_URL = "http://firefly-iii_server_1:8080"
+DEFAULT_SURE_URL = "http://sure_web_1:3000"
 
 
 def _file() -> Path:
@@ -11,9 +12,14 @@ def _file() -> Path:
 
 
 def load() -> dict:
-    data = {"firefly_url": os.environ.get("FIREFLY_URL", DEFAULT_URL),
+    data = {"target": os.environ.get("BANKIMPORT_TARGET", "firefly"),
+            "firefly_url": os.environ.get("FIREFLY_URL", DEFAULT_URL),
             "firefly_token": os.environ.get("FIREFLY_TOKEN", ""),
-            "firefly_link": os.environ.get("FIREFLY_LINK", "")}
+            "firefly_link": os.environ.get("FIREFLY_LINK", ""),
+            "sure_url": os.environ.get("SURE_URL", DEFAULT_SURE_URL),
+            "sure_key": os.environ.get("SURE_API_KEY", ""),
+            "sure_link": os.environ.get("SURE_LINK", ""),
+            "sure_accounts": {}}
     f = _file()
     if f.exists():
         try:

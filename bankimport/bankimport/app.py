@@ -1,4 +1,4 @@
-"""Bank-Import: Kontoauszüge (CSV) per Upload direkt in Firefly III übernehmen."""
+"""Bank-Import: Kontoauszüge (CSV) per Upload direkt in Firefly III oder Sure übernehmen."""
 import os
 import threading
 import time
@@ -9,6 +9,7 @@ from flask import Flask, abort, redirect, render_template_string, request, url_f
 from . import settings
 from .banks import ParseError, parse
 from .firefly import Firefly, FireflyError, build_plan, run_import
+from .sure import Sure
 
 VERSION = os.environ.get("BANKIMPORT_VERSION", "dev")
 TAG = os.environ.get("IMPORT_TAG", "Bank-Import")
@@ -30,19 +31,33 @@ class NotConfigured(Exception):
     pass
 
 
-def ff() -> Firefly:
+TARGETS = {"firefly": "Firefly III", "sure": "Sure"}
+
+
+def target_name() -> str:
+    return TARGETS.get(settings.load()["target"], "Firefly III")
+
+
+def ff():
+    """Client für das eingestellte Ziel (Firefly oder Sure)."""
     cfg = settings.load()
+    if cfg["target"] == "sure":
+        if not cfg["sure_key"]:
+            raise NotConfigured()
+        return Sure(cfg["sure_url"], cfg["sure_key"], cfg["sure_accounts"])
     if not cfg["firefly_token"]:
         raise NotConfigured()
     return Firefly(cfg["firefly_url"], cfg["firefly_token"])
 
 
-def firefly_link() -> str:
-    link = settings.load()["firefly_link"]
+def target_link() -> str:
+    cfg = settings.load()
+    sure = cfg["target"] == "sure"
+    link = cfg["sure_link"] if sure else cfg["firefly_link"]
     if link:
         return link
     host = request.host.split(":")[0]
-    return f"{request.scheme}://{host}:30009"
+    return f"{request.scheme}://{host}:{3064 if sure else 30009}"
 
 
 def _cleanup():
@@ -128,30 +143,58 @@ UPLOAD = """<div class="card"><h2>Kontoauszug hochladen</h2>
 Das Konto wird an der IBAN erkannt, bereits importierte Buchungen werden übersprungen.</p></div>"""
 
 SETUP = """<div class="card"><h2>Einrichtung</h2>
-<p>Bank-Import braucht einen Zugangsschlüssel für Firefly III, bevor es losgehen kann.</p>
+<p>Bank-Import braucht einen Zugang zu {{ target }}, bevor es losgehen kann.</p>
 <div class="actions"><a class="btn" href="{{ url_for('settings_page') }}">Zu den Einstellungen</a></div></div>"""
 
-SETTINGS = """<div class="card"><h2>Verbindung zu Firefly III</h2>
-<form method="post" action="{{ url_for('settings_page') }}">
+SETTINGS = """<form method="post" action="{{ url_for('settings_page') }}">
+<div class="card"><h2>Ziel</h2>
+<p class="sub">Wohin sollen die Buchungen geschrieben werden?</p>
+<label><input type="radio" name="target" value="firefly" {{ 'checked' if cfg.target != 'sure' }}> Firefly III</label>
+<label><input type="radio" name="target" value="sure" {{ 'checked' if cfg.target == 'sure' }}> Sure</label>
+</div>
+
+<div class="card"><h2>Sure</h2>
+<label for="sure_key">API-Schlüssel</label>
+<input type="password" id="sure_key" name="sure_key" autocomplete="off"
+ placeholder="{{ 'Gespeichert – leer lassen, um ihn zu behalten' if cfg.sure_key else 'Schlüssel hier einfügen' }}">
+<div class="hint">In Sure: Einstellungen → API-Schlüssel → neuen Schlüssel mit Lese- und Schreibrecht erstellen.</div>
+<label for="sure_url">Interne Adresse von Sure</label>
+<input type="text" id="sure_url" name="sure_url" value="{{ cfg.sure_url }}">
+<div class="hint">Auf Umbrel normalerweise unverändert lassen.</div>
+<label for="sure_link">Adresse für „Sure öffnen“ (optional)</label>
+<input type="text" id="sure_link" name="sure_link" value="{{ cfg.sure_link }}" placeholder="automatisch: gleicher Rechner, Port 3064">
+{% if sure_accounts is not none %}
+<h2 style="margin-top:22px">Konten zuordnen</h2>
+<p class="sub">Sure speichert keine IBAN. Trage bei jedem Konto die IBAN ein, dann erkennt Bank-Import, wohin gebucht wird – und Umbuchungen zwischen deinen Konten.</p>
+{% if sure_accounts %}<div class="tbl"><table><tr><th>Sure-Konto</th><th>IBAN</th></tr>
+{% for id, name, typ in sure_accounts %}<tr><td>{{ name }}<div class="desc">{{ typ }}</div></td>
+<td><input type="text" name="iban_{{ id }}" value="{{ iban_of.get(id, '') }}" placeholder="DE…"></td></tr>{% endfor %}
+</table></div>{% else %}<p class="sub">In Sure gibt es noch keine Konten. Lege sie dort zuerst an.</p>{% endif %}
+{% endif %}
+</div>
+
+<div class="card"><h2>Firefly III</h2>
 <label for="token">Persönlicher Zugangsschlüssel</label>
 <input type="password" id="token" name="firefly_token" autocomplete="off"
- placeholder="{{ 'Gespeichert – leer lassen, um ihn zu behalten' if has_token else 'Token hier einfügen' }}">
+ placeholder="{{ 'Gespeichert – leer lassen, um ihn zu behalten' if cfg.firefly_token else 'Token hier einfügen' }}">
 <div class="hint">In Firefly: Profil → Fernzugriff und Token → Persönliche Zugangstoken → Neuen Token erstellen.</div>
 <label for="url">Interne Adresse von Firefly</label>
 <input type="text" id="url" name="firefly_url" value="{{ cfg.firefly_url }}">
-<div class="hint">Auf Umbrel normalerweise unverändert lassen.</div>
 <label for="link">Adresse für „Firefly öffnen“ (optional)</label>
 <input type="text" id="link" name="firefly_link" value="{{ cfg.firefly_link }}" placeholder="automatisch: gleicher Rechner, Port 30009">
-<div class="actions"><button type="submit" name="action" value="save">Speichern</button>
+</div>
+
+<div class="actions" style="margin-bottom:18px"><button type="submit" name="action" value="save">Speichern</button>
 <button class="sec" type="submit" name="action" value="test">Verbindung testen</button></div>
-</form></div>
-{% if accounts is not none %}<div class="card"><h2>Bestandskonten mit IBAN in Firefly</h2>
+</form>
+
+{% if accounts is not none %}<div class="card"><h2>Erkannte Konten in {{ target }}</h2>
 {% if accounts %}<div class="tbl"><table><tr><th>Konto</th><th>IBAN</th></tr>
 {% for iban, (id, name) in accounts.items() %}<tr><td>{{ name }}</td><td>{{ iban }}</td></tr>{% endfor %}
-</table></div>{% else %}<p class="sub">Keine Bestandskonten mit IBAN gefunden. Trage bei deinen Konten in Firefly die IBAN ein – daran erkennt Bank-Import, wohin gebucht wird.</p>{% endif %}
+</table></div>{% else %}<p class="sub">Noch keine Konten mit IBAN. {{ 'Trage oben bei deinen Sure-Konten die IBAN ein.' if cfg.target == 'sure' else 'Trage bei deinen Konten in Firefly die IBAN ein.' }}</p>{% endif %}
 </div>{% endif %}
 <div class="card"><h2>Kategorien</h2>
-<p class="sub">Legt in Firefly die Standard-Kategorien an, die noch fehlen. Bestehende bleiben unverändert.</p>
+<p class="sub">Legt in {{ target }} die Standard-Kategorien an, die noch fehlen. Bestehende bleiben unverändert.</p>
 <p class="sub" style="margin-top:8px">{{ default_categories|join(" · ") }}</p>
 <form method="post" action="{{ url_for('create_categories') }}"><div class="actions">
 <button class="sec" type="submit">Fehlende Kategorien anlegen</button></div></form></div>"""
@@ -190,7 +233,7 @@ RESULT = """<div class="card"><h2>Ergebnis</h2>
 {% for r, good, info in results if not good %}
 <tr><td>{{ r.booking.line }}</td><td>{{ r.booking.date.strftime('%d.%m.%Y') }} · {{ r.other }} · {{ fmt(r.booking.amount) }}</td><td>{{ info }}</td></tr>
 {% endfor %}</table></div>{% endif %}
-<div class="actions"><a class="btn" href="{{ link }}" target="_blank" rel="noopener">Firefly öffnen</a>
+<div class="actions"><a class="btn" href="{{ link }}" target="_blank" rel="noopener">{{ target }} öffnen</a>
 <a class="btn sec" href="{{ url_for('index') }}">Nächste Datei</a></div></div>"""
 
 
@@ -207,40 +250,65 @@ def page(body_tpl, active="import", error=None, notice=None, **ctx):
 
 @app.get("/")
 def index():
-    if not settings.load()["firefly_token"]:
-        return page(SETUP)
+    try:
+        ff()
+    except NotConfigured:
+        return page(SETUP, target=target_name())
     return page(UPLOAD, error=request.args.get("error"))
+
+
+def _settings_page(error=None, notice=None, accounts=None):
+    cfg = settings.load()
+    sure_accounts = None
+    if cfg["sure_key"]:
+        try:
+            sure_accounts = Sure(cfg["sure_url"], cfg["sure_key"], {}).accounts()
+        except Exception as e:
+            if cfg["target"] == "sure" and not error:
+                error = f"Sure ist nicht erreichbar: {e}"
+    iban_of = {aid: iban for iban, aid in cfg["sure_accounts"].items()}
+    return page(SETTINGS, active="settings", error=error, notice=notice, cfg=cfg,
+                accounts=accounts, sure_accounts=sure_accounts, iban_of=iban_of,
+                target=target_name(), default_categories=DEFAULT_CATEGORIES)
 
 
 @app.route("/einstellungen", methods=["GET", "POST"])
 def settings_page():
-    error = notice = None
-    accounts = None
-    if request.method == "POST":
-        token = request.form.get("firefly_token", "").strip()
-        values = {"firefly_url": request.form.get("firefly_url", "").strip() or settings.DEFAULT_URL,
-                  "firefly_link": request.form.get("firefly_link", "").strip()}
-        if token:
-            values["firefly_token"] = token
-        settings.save(**values)
-        notice = "Gespeichert."
-        if request.form.get("action") == "test" or token:
-            try:
-                accounts = ff().asset_accounts()
-                notice = "Gespeichert – Verbindung zu Firefly funktioniert."
-            except NotConfigured:
-                error, notice = "Es ist noch kein Zugangsschlüssel gespeichert.", None
-            except Exception as e:
-                error, notice = f"Verbindung fehlgeschlagen: {e}", None
-    cfg = settings.load()
-    return page(SETTINGS, active="settings", error=error, notice=notice, cfg=cfg,
-                has_token=bool(cfg["firefly_token"]), accounts=accounts,
-                default_categories=DEFAULT_CATEGORIES)
+    if request.method == "GET":
+        return _settings_page()
+    f = request.form
+    values = {
+        "target": f.get("target") if f.get("target") in TARGETS else "firefly",
+        "firefly_url": f.get("firefly_url", "").strip() or settings.DEFAULT_URL,
+        "firefly_link": f.get("firefly_link", "").strip(),
+        "sure_url": f.get("sure_url", "").strip() or settings.DEFAULT_SURE_URL,
+        "sure_link": f.get("sure_link", "").strip(),
+    }
+    for key in ("firefly_token", "sure_key"):
+        if f.get(key, "").strip():
+            values[key] = f[key].strip()
+    mapping = {}
+    for k, v in f.items():
+        if k.startswith("iban_") and v.strip():
+            mapping[v.replace(" ", "").upper()] = k[5:]
+    if any(k.startswith("iban_") for k in f):
+        values["sure_accounts"] = mapping
+    settings.save(**values)
+
+    error, notice, accounts = None, "Gespeichert.", None
+    if f.get("action") == "test" or values.get("firefly_token") or values.get("sure_key"):
+        try:
+            accounts = ff().asset_accounts()
+            notice = f"Gespeichert – Verbindung zu {target_name()} funktioniert."
+        except NotConfigured:
+            error, notice = f"Für {target_name()} ist noch kein Schlüssel gespeichert.", None
+        except Exception as e:
+            error, notice = f"Verbindung fehlgeschlagen: {e}", None
+    return _settings_page(error, notice, accounts)
 
 
 @app.post("/einstellungen/kategorien")
 def create_categories():
-    cfg = settings.load()
     error = notice = None
     try:
         client = ff()
@@ -254,9 +322,7 @@ def create_categories():
         error = "Bitte zuerst den Zugangsschlüssel speichern."
     except Exception as e:
         error = f"Kategorien konnten nicht angelegt werden: {e}"
-    return page(SETTINGS, active="settings", error=error, notice=notice, cfg=cfg,
-                has_token=bool(cfg["firefly_token"]), accounts=None,
-                default_categories=DEFAULT_CATEGORIES)
+    return _settings_page(error, notice)
 
 
 @app.post("/vorschau")
@@ -274,10 +340,10 @@ def preview():
         except Exception:
             categories = []
     except NotConfigured:
-        return page(SETUP)
+        return page(SETUP, target=target_name())
     except (ParseError, FireflyError) as e:
         return page(UPLOAD, error=str(e))
-    except Exception as e:  # z. B. Firefly nicht erreichbar
+    except Exception as e:  # z. B. Ziel nicht erreichbar
         return page(UPLOAD, error=f"Unerwarteter Fehler: {e}")
     pid = uuid.uuid4().hex
     with LOCK:
@@ -303,7 +369,7 @@ def do_import(pid):
     except Exception as e:
         return page(UPLOAD, error=f"Import abgebrochen: {e}")
     ok = sum(1 for _, good, _ in results if good)
-    return page(RESULT, results=results, ok=ok, fail=len(results) - ok, link=firefly_link())
+    return page(RESULT, results=results, ok=ok, fail=len(results) - ok, link=target_link(), target=target_name())
 
 
 ICON = None

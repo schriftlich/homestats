@@ -106,7 +106,7 @@ def test_web_flow(client):
     assert "Einrichtung" in client.get("/").get_data(as_text=True)
     r = client.post("/einstellungen", data={"firefly_token": "abc", "firefly_url": "", "action": "save"})
     html = r.get_data(as_text=True)
-    assert "Verbindung zu Firefly funktioniert" in html and "Sparkonto" in html
+    assert "Verbindung zu Firefly III funktioniert" in html and "Sparkonto" in html
 
     import io
     r = client.post("/vorschau", data={"file": (io.BytesIO(CSV), "dkb.csv")},

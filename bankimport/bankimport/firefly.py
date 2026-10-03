@@ -74,6 +74,9 @@ class Firefly:
             raise FireflyError(f"Kategorie „{name}“ konnte nicht angelegt werden: {r.status_code} {r.text[:200]}")
 
     def create(self, payload):
+        # x_-Felder sind nur für andere Ziele (Sure) gedacht
+        payload = dict(payload, transactions=[{k: v for k, v in t.items() if not k.startswith("x_")}
+                                              for t in payload["transactions"]])
         r = self.s.post(f"{self.url}/api/v1/transactions", json=payload, timeout=self.timeout)
         if r.ok:
             return True, r.json()["data"]["id"]
@@ -185,9 +188,9 @@ def build_plan(ff: Firefly, st: Statement, tag: str = "Bank-Import") -> Plan:
     if not st.account_iban:
         raise FireflyError("In der Datei steht keine IBAN des eigenen Kontos.")
     if st.account_iban not in own:
-        raise FireflyError(
-            f"Zur IBAN {st.account_iban} gibt es in Firefly kein Bestandskonto. "
-            "Lege das Konto in Firefly an und trage dort die IBAN ein.")
+        raise FireflyError(getattr(ff, "MISSING_ACCOUNT",
+            "Zur IBAN {iban} gibt es in Firefly kein Bestandskonto. "
+            "Lege das Konto in Firefly an und trage dort die IBAN ein.").format(iban=st.account_iban))
     acc_id, acc_name = own[st.account_iban]
 
     start = min(b.date for b in st.bookings) - timedelta(days=1)
@@ -249,6 +252,10 @@ def _payload(b: Booking, kind, acc_id, other_acc, ext, tag):
         "description": desc,
         "external_id": ext,
         "tags": [tag],
+        # Zusatzinfos für Ziele ohne Firefly-Kontenmodell (Sure); Firefly bekommt sie nicht
+        "x_account_id": acc_id,
+        "x_direction": "out" if b.amount < 0 else "in",
+        "x_counterparty": b.counterparty or "",
     }
     if desc != b.description and b.description:
         split["notes"] = b.description

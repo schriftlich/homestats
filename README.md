@@ -4,7 +4,7 @@ Dieses Repo ist ein **Umbrel Community App Store** mit drei Apps:
 
 - **Zählerstände** – Zählerstände für Gas, Wasser und Strom erfassen und auswerten: Verbrauch pro Monat, Kosten, Vorjahresvergleich und eine Hochrechnung gegen deine Abschläge (Nachzahlung oder Guthaben).
 - **Gemeindeverzeichnis** – Haushalte und Personen der Gemeinde pflegen, Mitgliederliste als PDF. Siehe [Gemeindeverzeichnis](#gemeindeverzeichnis).
-- **Bank-Import** – Kontoauszug (CSV) hochladen, Vorschau prüfen, Buchungen direkt in Firefly III übernehmen. Siehe [Bank-Import](#bank-import).
+- **Bank-Import** – Kontoauszug (CSV) hochladen, Vorschau prüfen, Buchungen direkt in Firefly III oder Sure übernehmen. Siehe [Bank-Import](#bank-import).
 
 ```
 umbrel-app-store.yml              Store-ID "homestats"
@@ -87,7 +87,9 @@ Die App ist durch die Umbrel-Anmeldung geschützt und braucht keinen eigenen Log
 
 ## Bank-Import
 
-Kontoauszug als CSV hochladen → Vorschau → Buchungen landen direkt in Firefly III (über die REST-Schnittstelle, ohne den Data Importer).
+Kontoauszug als CSV hochladen → Vorschau → Buchungen landen direkt in Firefly III oder Sure (über deren REST-Schnittstellen, ohne Data Importer). Das Ziel wird unter **Einstellungen** gewählt.
+
+**Sure:** In Sure unter Einstellungen → API-Schlüssel einen Schlüssel mit Lese- und Schreibrecht erstellen und in Bank-Import eintragen. Da Sure keine IBAN an Konten speichert, wird in Bank-Import pro Sure-Konto die IBAN eingetragen. Doppelte Importe verhindert Sure zusätzlich selbst über die externe ID (`source: bankimport`). Umbuchungen kann die Sure-Schnittstelle nicht direkt anlegen – sie werden als Aus-/Eingang gebucht; Sure erkennt passende Gegenbuchungen auf eigenen Konten in der Regel selbst als Transfer.
 
 - Das eigene Konto wird an der IBAN in der Datei erkannt. Dafür muss das Konto in Firefly als Bestandskonto **mit IBAN** angelegt sein.
 - Überweisungen auf andere eigene Konten (ebenfalls mit IBAN in Firefly) werden als Umbuchung angelegt.
