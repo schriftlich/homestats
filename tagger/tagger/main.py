@@ -153,9 +153,12 @@ async def group_post(request: Request, gid: str):
             lib.remember(g, plan)
             n = len(entry["items"])
             text = f"{n} Datei(en) übernommen: {entry['label']}"
-            if entry["errors"]:
+            if entry["errors"] and not n:
+                err = "Nichts übernommen, die Dateien sind unverändert. " + "; ".join(entry["errors"])
+            elif entry["errors"]:
                 return redirect("/verlauf", err=text + " – Probleme: " + "; ".join(entry["errors"]))
-            return redirect("/", msg=text)
+            else:
+                return redirect("/", msg=text)
     else:
         err = None
     return render(request, "group.html", g=g, plan=plan, box=box, settings=settings, err=err,
@@ -177,7 +180,8 @@ def apply_all(request: Request):
         except lib.ApplyError as e:
             errors.append(f"{g.album}: {e}")
     if errors:
-        return redirect("/verlauf", err=f"{n} Datei(en) übernommen, Probleme: " + "; ".join(errors[:5]))
+        target = "/verlauf" if n else "/"
+        return redirect(target, err=f"{n} Datei(en) übernommen, Probleme: " + "; ".join(errors[:5]))
     return redirect("/", msg=f"{n} Datei(en) übernommen.")
 
 

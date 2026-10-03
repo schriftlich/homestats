@@ -210,3 +210,34 @@ def test_cover_and_cross_site_post(client, env):
     assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
     r = client.post("/alle", headers={"sec-fetch-site": "cross-site"})
     assert r.status_code == 403
+
+
+def test_failed_move_leaves_file_untouched(client, env, monkeypatch):
+    from tagger import library
+
+    def boom(src, dst):
+        raise PermissionError(13, "Permission denied", str(dst.parent))
+
+    monkeypatch.setattr(library, "_move", boom)
+    gid = gid_for(client, "Herr der Ringe")
+    client.post(f"/gruppe/{gid}", data={"action": "as-hoerbuch"})
+    g, data = form_for(client, gid, albumartist="J. R. R. Tolkien", action="apply")
+    r = client.post(f"/gruppe/{gid}", data=data)
+    assert r.status_code == 200 and "Nichts übernommen" in r.text and "keine Schreibrechte" in r.text
+    f = env / "metube" / "Herr der Ringe Hörspiel komplett deutsch.mp3"
+    tags = ID3(f)
+    assert str(tags["TIT2"]) == "Herr der Ringe Hörspiel komplett deutsch"
+    assert "TXXX:HOMESTATS_TAGGER" not in tags and "TXXX:description" in tags
+    assert library.history() == []
+    assert "Herr der Ringe" in client.get("/").text   # bleibt im Eingang sichtbar
+
+
+def test_marker_alone_does_not_hide(client, env):
+    """Dateien mit Marker aus einem abgebrochenen Lauf (v0.1.0) tauchen wieder auf."""
+    f = env / "metube" / "Herr der Ringe Hörspiel komplett deutsch.mp3"
+    tags = ID3(f)
+    tags.add(TXXX(encoding=3, desc="HOMESTATS_TAGGER", text=["0.1.0"]))
+    tags.save(f)
+    old = time.time() - 3600
+    os.utime(f, (old, old))
+    assert "Herr der Ringe" in client.get("/").text

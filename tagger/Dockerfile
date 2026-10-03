@@ -11,9 +11,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY tagger ./tagger
 
-# Läuft als UID 1000 (wie von Umbrel erwartet) – derselbe Benutzer, dem der Download-Ordner gehört.
-RUN mkdir -p /data /downloads && chown 1000:1000 /data
-USER 1000:1000
+# Läuft als root, weil MeTube & Co. ihre Dateien je nach Version als root oder UID 1000 anlegen.
+# Neue Ordner und verschobene Dateien bekommen den Besitzer des Download-Ordners (siehe library.fix_owner).
+RUN mkdir -p /data /downloads
 VOLUME /data
 EXPOSE 8080
 

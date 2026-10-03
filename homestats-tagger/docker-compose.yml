@@ -10,7 +10,6 @@ services:
   web:
     # Wird von .github/workflows/release-tagger.yml beim Release auf Tag + Digest gesetzt.
     image: ghcr.io/schriftlich/homestats-tagger:0.1.0@sha256:f0d0cecf2607297f9f415502304bec477993ff420f9a75f81ab6e6899b79d94b
-    user: "1000:1000"
     init: true
     restart: on-failure
     stop_grace_period: 10s

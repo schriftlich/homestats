@@ -183,6 +183,9 @@ class Inbox:
 def load_inbox(min_age: float = 30) -> Inbox:
     mem, ignored = load_memory()
     infos = scan(min_age)
+    kept = kept_in_inbox()
+    for i in infos:
+        i.done = i.track.relpath in kept
     files = {i.track.id: i for i in infos}
     todo = [i for i in infos if not i.done and i.track.relpath not in ignored]
     groups = build_groups([i.track for i in todo], mem)
@@ -357,26 +360,41 @@ def apply(plan: Plan, files: dict[str, FileInfo], settings: Settings, auto: bool
                 errors.append(f"Datei nicht mehr vorhanden ({item.title})")
                 continue
             src = info.path
+            dst = target_for(plan, item, info)
+            # Erst prüfen, dann ändern: entweder alles klappt oder die Datei bleibt unverändert
+            problem = _check_writable(src, dst)
+            if problem:
+                errors.append(problem)
+                continue
             backup = undo_dir / f"{n}.id3"
             try:
-                try:
-                    ID3(src).save(_touch(backup), v2_version=4)
-                except ID3NoHeaderError:
-                    backup = None
+                ID3(src).save(_touch(backup), v2_version=4)
+            except ID3NoHeaderError:
+                backup = None
+            except OSError as e:
+                errors.append(f"{_rel(src)}: Sicherung fehlgeschlagen ({e.strerror or e})")
+                continue
+            tagged = False
+            st = src.stat()
+            try:
                 write_tags(src, plan, item, len(plan.items), settings)
-                dst = target_for(plan, item, info)
+                tagged = True
                 if dst != src:
-                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    make_dirs(dst.parent)
                     dst = unique_path(dst)
                     _move(src, dst)
-                sources.add(src.parent)
-                done.append({"old": _rel(src), "new": _rel(dst), "backup": backup.name if backup else None,
-                             "title": item.title})
-                _cache.pop(info.track.relpath, None)
-            except PermissionError:
-                errors.append(f"Keine Schreibrechte: {_rel(src)}")
+                    fix_owner(dst)
             except OSError as e:
-                errors.append(f"{_rel(src)}: {e.strerror or e}")
+                where = e.filename if getattr(e, "filename", None) else src
+                errors.append(f"{_rel(Path(where))}: {_os_error(e)}")
+                if tagged and src.exists():
+                    _restore_tags(src, backup)   # nicht halb fertig liegen lassen
+                    os.utime(src, ns=(st.st_atime_ns, st.st_mtime_ns))
+                continue
+            sources.add(src.parent)
+            done.append({"old": _rel(src), "new": _rel(dst), "backup": backup.name if backup else None,
+                         "title": item.title})
+            _cache.pop(info.track.relpath, None)
         for d in sorted(sources, key=lambda p: len(p.parts), reverse=True):
             _remove_empty_dirs(d)
         entry = {
@@ -389,6 +407,73 @@ def apply(plan: Plan, files: dict[str, FileInfo], settings: Settings, auto: bool
         else:
             shutil.rmtree(undo_dir, ignore_errors=True)
         return entry
+
+
+def _os_error(e: OSError) -> str:
+    if isinstance(e, PermissionError):
+        return "keine Schreibrechte"
+    return e.strerror or str(e)
+
+
+def _check_writable(src: Path, dst: Path) -> str | None:
+    if not os.access(src, os.W_OK):
+        return f"{_rel(src)}: Datei ist schreibgeschützt (keine Schreibrechte)"
+    if dst.parent != src.parent and not os.access(src.parent, os.W_OK):
+        return f"{_rel(src.parent)}: Ordner ist schreibgeschützt, Datei kann nicht verschoben werden"
+    # nächsten existierenden Ordner auf dem Weg zum Ziel prüfen
+    d = dst.parent
+    while not d.exists() and d != d.parent:
+        d = d.parent
+    if not os.access(d, os.W_OK):
+        return f"{_rel(d)}: Ordner ist schreibgeschützt, Ziel kann nicht angelegt werden"
+    return None
+
+
+def _owner() -> tuple[int, int] | None:
+    """Besitzer des Download-Ordners – neue Ordner/Dateien bekommen denselben (falls wir root sind)."""
+    if os.geteuid() != 0:
+        return None
+    try:
+        st = downloads().stat()
+        return st.st_uid, st.st_gid
+    except OSError:
+        return None
+
+
+def fix_owner(p: Path) -> None:
+    own = _owner()
+    if own:
+        try:
+            os.chown(p, *own)
+        except OSError:
+            pass
+
+
+def make_dirs(d: Path) -> None:
+    missing = []
+    while not d.exists():
+        missing.append(d)
+        d = d.parent
+    for m in reversed(missing):
+        m.mkdir(exist_ok=True)
+        fix_owner(m)
+
+
+def _restore_tags(path: Path, backup: Path | None) -> None:
+    try:
+        ID3(path).delete(path)
+        if backup and backup.exists() and backup.stat().st_size:
+            ID3(backup).save(path, v2_version=4)
+        _cache.pop(_rel_inbox(path), None)
+    except Exception:
+        log.exception("Konnte Tags von %s nicht zurücksetzen", path)
+
+
+def _rel_inbox(p: Path) -> str:
+    try:
+        return p.relative_to(inbox()).as_posix()
+    except ValueError:
+        return p.as_posix()
 
 
 def _touch(p: Path) -> Path:
@@ -431,6 +516,19 @@ def _append_log(entry: dict) -> None:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def kept_in_inbox() -> set[str]:
+    """Dateien, die bewusst getaggt im Eingang gelassen wurden (relativ zum Eingang)."""
+    prefix = inbox().relative_to(downloads()).as_posix() + "/" if inbox().is_relative_to(downloads()) else ""
+    out = set()
+    for e in history(100_000):
+        if e.get("undone") or e.get("move", True):
+            continue
+        for it in e["items"]:
+            if it["new"].startswith(prefix):
+                out.add(it["new"][len(prefix):])
+    return out
+
+
 def history(limit: int = 200) -> list[dict]:
     try:
         lines = (data_dir() / "log.jsonl").read_text().splitlines()
@@ -463,7 +561,7 @@ def undo(entry_id: str) -> list[str]:
                     saved = ID3(undo_dir / it["backup"])
                     ID3(cur).delete(cur)
                     saved.save(cur, v2_version=4)
-                old.parent.mkdir(parents=True, exist_ok=True)
+                make_dirs(old.parent)
                 dst = unique_path(old) if cur != old else old
                 if cur != dst:
                     _move(cur, dst)
