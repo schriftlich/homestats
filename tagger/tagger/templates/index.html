@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+{% if not inbox_ok %}
+<div class="msg err">Der Eingangsordner <span class="mono">Downloads/metube</span> wurde nicht gefunden. Ist MeTube installiert?</div>
+{% endif %}
+<div class="grid3">
+  <div class="card tile"><div class="label">Offen</div><div class="value">{{ box.groups|length }}</div><div class="sub">Alben/Hörbücher</div></div>
+  <div class="card tile"><div class="label">Dateien</div><div class="value">{{ n_files }}</div><div class="sub">im Eingang</div></div>
+  <div class="card tile"><div class="label">Sicher erkannt</div><div class="value">{{ sure|length }}</div><div class="sub">{{ 'Automatik an' if settings.auto else 'Automatik aus' }}</div></div>
+</div>
+
+{% if sure %}
+<form method="post" action="/alle" class="card">
+  <h2>Alles Sichere auf einmal</h2>
+  <p class="hint">{{ sure|length }} Gruppe(n) mit {{ sure|map(attribute='tracks')|map('length')|sum }} Dateien sind eindeutig erkannt.
+    {% if settings.move %}Sie werden getaggt und nach <b>music/</b> bzw. <b>audiobooks/</b> verschoben.{% else %}Sie werden getaggt und im Eingang umbenannt.{% endif %}
+    Alles lässt sich im Verlauf rückgängig machen.</p>
+  <button class="btn primary block" type="submit">{{ sure|length }} Gruppe(n) übernehmen</button>
+</form>
+{% endif %}
+
+<div class="card">
+  <h2>Eingang</h2>
+  {% if not box.groups %}
+  <p class="muted">Nichts zu tun – alle Downloads sind sortiert.</p>
+  {% else %}
+  <ul class="groups">
+    {% for g in box.groups %}
+    <li><a href="/gruppe/{{ g.id }}">
+      <img class="cover" src="/cover/{{ g.tracks[0].id }}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+      <div class="main">
+        <div class="title">{{ g.album or g.folder or g.tracks[0].stem }}</div>
+        <div class="meta">{{ g.albumartist or '–' }} · {{ g.tracks|length }} {{ 'Datei' if g.tracks|length == 1 else 'Dateien' }}{% if g.year %} · {{ g.year }}{% endif %}</div>
+      </div>
+      {% if g.kind == HOERBUCH %}<span class="badge book">{{ g.genre or 'Hörbuch' }}</span>{% endif %}
+      {% if g.sure %}<span class="badge ok">sicher</span>{% else %}<span class="badge warn">prüfen</span>{% endif %}
+    </a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% if box.done %}
+<p class="hint">{{ box.done|length }} bereits getaggte Datei(en) liegen noch im Eingang und werden nicht mehr angezeigt.</p>
+{% endif %}
+{% endblock %}

@@ -1,10 +1,11 @@
 # HomeStats – eigene Apps für Umbrel
 
-Dieses Repo ist ein **Umbrel Community App Store** mit drei Apps:
+Dieses Repo ist ein **Umbrel Community App Store** mit vier Apps:
 
 - **Zählerstände** – Zählerstände für Gas, Wasser und Strom erfassen und auswerten: Verbrauch pro Monat, Kosten, Vorjahresvergleich und eine Hochrechnung gegen deine Abschläge (Nachzahlung oder Guthaben).
 - **Gemeindeverzeichnis** – Haushalte und Personen der Gemeinde pflegen, Mitgliederliste als PDF. Siehe [Gemeindeverzeichnis](#gemeindeverzeichnis).
 - **Bank-Import** – Kontoauszug (CSV) hochladen, Vorschau prüfen, Buchungen direkt in Firefly III oder Sure übernehmen. Siehe [Bank-Import](#bank-import).
+- **MP3-Tagger** – MeTube-Downloads sauber taggen und in Navidrome bzw. Audiobookshelf einsortieren. Siehe [MP3-Tagger](#mp3-tagger).
 
 ```
 umbrel-app-store.yml              Store-ID "homestats"
@@ -14,6 +15,8 @@ homestats-gemeinde/               Umbrel-Paket Gemeindeverzeichnis
 gemeinde/                         Quellcode Gemeindeverzeichnis (FastAPI, SQLite, ReportLab) + Dockerfile
 homestats-bankimport/             Umbrel-Paket Bank-Import
 bankimport/                       Quellcode Bank-Import (Flask) + Dockerfile
+homestats-tagger/                 Umbrel-Paket MP3-Tagger
+tagger/                           Quellcode MP3-Tagger (FastAPI, mutagen, Pillow) + Dockerfile
 .github/workflows/                CI (Tests) und Releases (Multi-Arch-Images nach ghcr.io)
 docker-compose.dev.yml            Zählerstände lokal starten mit Beispieldaten
 ```
@@ -123,3 +126,28 @@ Haushalte (Familienname, Anschrift, Festnetz) mit den Personen darin (Geburtstag
 - **Backup:** *Einstellungen → Backup herunterladen* (ZIP mit CSV). Enthält alle persönlichen Daten.
 - Lokal testen: `cd gemeinde && GEMEINDE_DEMO=1 uvicorn gemeinde.main:app --reload` (legt Beispieldaten an).
 - Release: Tag `gemeinde-v1.2.3` (Workflow „Release Gemeindeverzeichnis“).
+
+## MP3-Tagger
+
+Liest den MeTube-Ordner (`Downloads/metube`), schlägt saubere Tags vor und sortiert die Dateien ein:
+
+- **Musik** → `Downloads/music/<Interpret>/<Album>/<Nr - >Titel.mp3` (Navidrome)
+- **Hörbücher/Hörspiele** → `Downloads/audiobooks/<Autor>/<Buch {Sprecher}>/<Titel>.mp3` bzw. `<Buch (Hörspiel)>` (Audiobookshelf)
+- Alternativ „Hier lassen“: nur Tags und Dateiname, die Datei bleibt im MeTube-Ordner.
+
+So wird erkannt:
+
+- Ein Ordner im Eingang (MeTube-Playlist) = ein Album. Albumname aus dem Ordnernamen ohne „(Official Album Playlist)“ o. Ä.
+- Interpret/Titel aus dem YouTube-Titel („Interpret - Titel“, „Titel - Interpret“, „"Titel" from Interpret“, „Serie #3 - Titel“ → Nr. 3). Kanalnamen wie „Audiotree“ oder „NPR Music“ werden nicht zum Interpreten. Zusätze wie „(Official Audio)“, „[Lyric Video]“ fallen weg, GROSSSCHREIBUNG wird normalisiert.
+- Hörbuch, wenn lang (≥ 45 Min. und keine YouTube-Kategorie „Music“) oder ≥ 20 Min. mit „Hörbuch/Hörspiel/gelesen von …“. Autor aus „Titel – Autor“ oder „nach Autor“, Sprecher aus „Gelesen von …“ / „… liest“.
+- Ein Jahr pro Album (häufigstes), damit Navidrome Alben nicht aufteilt. Cover wird quadratisch zugeschnitten, Videobeschreibung entfernt (Link zum Video bleibt).
+- **„sicher“** = Interpret aus dem Titel bestätigt (bzw. Autor bei Hörbüchern gefunden). Nur solche Gruppen übernehmen „Alles Sichere“ und die Automatik.
+- Korrekturen werden gelernt: Kanal → Interpret, Buchtitel → Autor (`~/umbrel/app-data/homestats-tagger/data/memory.json`).
+- **Verlauf → Rückgängig** stellt alte Tags (Sicherung unter `data/undo/`) und den alten Ort wieder her.
+- **Automatik** (Einstellungen, standardmäßig aus): prüft alle X Minuten, übernimmt nur sichere Gruppen, deren Ordner seit 10 Minuten unverändert ist.
+
+Die App hängt `~/umbrel/data/storage/downloads` als `/downloads` ein (wie MeTube, Navidrome, Audiobookshelf) und läuft als UID 1000.
+
+- Lokal testen: `cd tagger && pip install -r requirements-dev.txt && python -m pytest -q` – die Erkennung wird gegen 236 echte MeTube-Titel geprüft (`tests/corpus.json`).
+- Lokal starten: `TAGGER_DOWNLOADS=/pfad/zu/downloads TAGGER_DATA_DIR=./data-dev uvicorn tagger.main:app --reload`
+- Release: Tag `tagger-v1.2.3` (Workflow „Release MP3-Tagger“). Beim ersten Release das Package `homestats-tagger` auf GitHub öffentlich stellen.

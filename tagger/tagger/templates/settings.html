@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen – MP3-Tagger{% endblock %}
+{% block content %}
+<h1>Einstellungen</h1>
+<form method="post" action="/einstellungen" class="card">
+  <h2>Beim Übernehmen</h2>
+  <label class="check"><input type="checkbox" name="move" value="1" {{ 'checked' if settings.move }}>In Navidrome (music) bzw. Audiobookshelf (audiobooks) einsortieren</label>
+  <p class="hint">Sonst bleiben die Dateien im MeTube-Ordner und werden nur getaggt und umbenannt.</p>
+  <label class="check"><input type="checkbox" name="square_cover" value="1" {{ 'checked' if settings.square_cover }}>Cover quadratisch zuschneiden</label>
+  <p class="hint">YouTube-Vorschaubilder sind 16:9; Navidrome und Audiobookshelf zeigen quadratische Cover.</p>
+  <label class="check"><input type="checkbox" name="strip_description" value="1" {{ 'checked' if settings.strip_description }}>Videobeschreibung entfernen</label>
+  <p class="hint">Links, Hashtags und Songtexte aus der YouTube-Beschreibung. Der Link zum Video bleibt erhalten.</p>
+
+  <h2 style="margin-top:22px">Automatik</h2>
+  <label class="check"><input type="checkbox" name="auto" value="1" {{ 'checked' if settings.auto }}>Sicher erkannte Downloads automatisch übernehmen</label>
+  <p class="hint">Nur Gruppen mit dem Hinweis „sicher“. Alles Unsichere – z. B. Hörbücher ohne erkannten Autor – wartet im Eingang auf dich. Ordner werden erst angefasst, wenn MeTube 10 Minuten lang nichts Neues hineingeladen hat.</p>
+  <label for="auto_minutes">Prüfen alle … Minuten</label>
+  <input id="auto_minutes" name="auto_minutes" type="number" min="5" max="1440" value="{{ settings.auto_minutes }}" style="max-width:140px">
+  {% if worker and worker.last_run %}<p class="hint">Zuletzt: {{ worker.last_run|dtime }} – {{ worker.last_result }}</p>{% endif %}
+  <button class="btn primary block" type="submit">Speichern</button>
+</form>
+
+<div class="card">
+  <h2>Ordner</h2>
+  <ul class="list">
+    {% for f in folders %}
+    <li><div class="main"><div class="title">{{ f.label }}</div><div class="meta mono">Downloads/{{ f.path }}</div></div>
+      {% if f.writable %}<span class="badge ok">ok</span>{% elif f.exists %}<span class="badge warn">nur lesen</span>{% else %}<span class="badge warn">fehlt</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  <p class="hint">Fehlende Ordner für Musik und Hörbücher werden beim ersten Einsortieren angelegt.</p>
+</div>
+
+{% if box.ignored %}
+<form method="post" action="/einstellungen/einblenden" class="card">
+  <h2>Ausgeblendet</h2>
+  <ul class="list">
+    {% for i in box.ignored %}
+    <li><label class="check" style="margin:0"><input type="checkbox" name="path" value="{{ i.track.relpath }}">{{ i.track.relpath }}</label></li>
+    {% endfor %}
+  </ul>
+  <button class="btn block" type="submit">Ausgewählte wieder einblenden</button>
+</form>
+{% endif %}
+
+<form method="post" action="/einstellungen/vergessen" class="card">
+  <h2>Gelernte Zuordnungen</h2>
+  <p class="hint">Wenn du einen Interpreten oder Autor korrigierst, merkt sich die App das (Kanal → Interpret, Buch → Autor) und schlägt es beim nächsten Mal vor.</p>
+  <button class="btn danger block" type="submit">Alles Gelernte vergessen</button>
+</form>
+{% endblock %}

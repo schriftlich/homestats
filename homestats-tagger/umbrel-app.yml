@@ -1,0 +1,41 @@
+manifestVersion: 1
+id: homestats-tagger
+category: media
+name: MP3-Tagger
+version: "0.0.0"
+tagline: MeTube-Downloads sauber taggen und in Navidrome oder Audiobookshelf einsortieren
+icon: https://raw.githubusercontent.com/schriftlich/homestats/main/homestats-tagger/icon.svg
+description: >-
+  Räumt die MP3s auf, die MeTube von YouTube lädt: Aus „Rend Collective - Burn
+  (Official Audio)“ mit dem Kanal als Interpret werden saubere Tags – Titel,
+  Interpret, Album (aus dem Playlist-Ordner), Jahr und quadratisches Cover.
+  Danach landen die Dateien geordnet in Downloads/music (Navidrome) bzw.
+  Downloads/audiobooks (Audiobookshelf).
+
+
+  - Erkennt Interpret und Titel in YouTube-Titeln, entfernt „(Official Video)“ & Co.
+
+  - Erkennt Hörbücher und Hörspiele, Autor und Sprecher (für Audiobookshelf)
+
+  - Vorschau und Korrektur vor dem Übernehmen, merkt sich deine Korrekturen
+
+  - Optional automatisch: sicher erkannte Downloads werden selbst einsortiert
+
+  - Verlauf mit „Rückgängig“
+releaseNotes: ""
+
+developer: schriftlich
+website: https://github.com/schriftlich/homestats
+dependencies: []
+repo: https://github.com/schriftlich/homestats
+support: https://github.com/schriftlich/homestats/issues
+
+port: 8746
+gallery: []
+path: ""
+
+defaultUsername: ""
+defaultPassword: ""
+
+submitter: schriftlich
+submission: https://github.com/schriftlich/homestats

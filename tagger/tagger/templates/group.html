@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{{ plan.album or g.folder }} – MP3-Tagger{% endblock %}
+{% block content %}
+{% set book = plan.kind == HOERBUCH %}
+<p class="small"><a href="/">← Eingang</a></p>
+<div class="head">
+  <img class="cover big" src="/cover/{{ g.tracks[0].id }}?sq={{ 1 if settings.square_cover else 0 }}" alt="" onerror="this.style.visibility='hidden'">
+  <div>
+    <h1>{{ plan.album or g.folder or g.tracks[0].stem }}</h1>
+    <div class="muted small">{{ g.folder or 'Einzelne Datei' }} · {{ g.tracks|length }} {{ 'Datei' if g.tracks|length == 1 else 'Dateien' }}</div>
+  </div>
+</div>
+{% for w in g.warnings %}<div class="msg warn">{{ w }}</div>{% endfor %}
+
+<form method="post" action="/gruppe/{{ g.id }}" id="f">
+  <div class="card">
+    <div class="row">
+      <h2 style="margin:0">{{ 'Hörbuch' if book else 'Album' }}</h2>
+      <span class="spacer"></span>
+      {% if book %}
+      <button class="btn small" name="action" value="as-musik" type="submit">Ist Musik</button>
+      {% else %}
+      <button class="btn small" name="action" value="as-hoerbuch" type="submit">Ist ein Hörbuch</button>
+      {% endif %}
+    </div>
+    <input type="hidden" name="kind" value="{{ plan.kind }}">
+    <div class="fields2">
+      <div><label for="albumartist">{{ 'Autor' if book else 'Interpret (Album)' }}</label>
+        <input id="albumartist" name="albumartist" value="{{ plan.albumartist }}" {{ 'required' if book }} autocomplete="off"></div>
+      <div><label for="album">{{ 'Buchtitel' if book else 'Album' }}</label>
+        <input id="album" name="album" value="{{ plan.album }}" required autocomplete="off"></div>
+      {% if book %}
+      <div><label for="narrator">Sprecher</label><input id="narrator" name="narrator" value="{{ plan.narrator }}" autocomplete="off"></div>
+      {% endif %}
+      <div><label for="year">Jahr</label><input id="year" name="year" value="{{ plan.year }}" inputmode="numeric" maxlength="4"></div>
+      <div><label for="genre">Genre</label>
+        <input id="genre" name="genre" value="{{ plan.genre }}" list="genres" autocomplete="off" placeholder="{{ 'Hörbuch' if book else 'z. B. Worship, Folk' }}"></div>
+    </div>
+    <datalist id="genres">
+      {% for x in (['Hörbuch', 'Hörspiel'] if book else ['Worship', 'Folk', 'Lobpreis', 'Pop', 'Klassik', 'Kinder', 'Weihnachten', 'Live']) %}<option value="{{ x }}">{% endfor %}
+    </datalist>
+    <label>Ziel</label>
+    <div class="seg">
+      <label><input type="radio" name="target" value="move" {{ 'checked' if plan.move }}>{{ 'In Audiobookshelf' if book else 'In Navidrome' }} einsortieren</label>
+      <label><input type="radio" name="target" value="here" {{ 'checked' if not plan.move }}>Hier lassen, nur umbenennen</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>{{ 'Dateien' if book else 'Titel' }}</h2>
+    <ul class="tracks">
+      {% for t in g.tracks %}
+      {% set item = (plan.items|selectattr('track_id', 'equalto', t.id)|first) %}
+      {% set p = g.proposals[t.id] %}
+      <li class="{{ '' if t.id in selected else 'off' }}">
+        <div class="line">
+          <input type="checkbox" name="on-{{ t.id }}" value="1" {{ 'checked' if t.id in selected }} aria-label="Übernehmen">
+          <input class="nr" name="track-{{ t.id }}" value="{{ (item.track if item else p.track) or '' }}" inputmode="numeric" placeholder="Nr." aria-label="Nummer">
+          <input name="title-{{ t.id }}" value="{{ item.title if item else p.title }}" aria-label="Titel">
+        </div>
+        <div class="sub">
+          <span></span>
+          <span class="small muted" style="text-align:center">{{ t.duration|duration }}</span>
+          <div>
+            {% if not book %}
+            <input name="artist-{{ t.id }}" value="{{ item.artist if item else p.artist }}" placeholder="Interpret (leer = Albuminterpret)" aria-label="Interpret" style="min-height:36px;padding:6px 10px;font-size:14px">
+            {% else %}<input type="hidden" name="artist-{{ t.id }}" value="">{% endif %}
+            <div class="orig">vorher: {{ t.title or t.stem }}{% if not book and t.artist %} · Kanal: {{ t.artist }}{% endif %}</div>
+            {% if t.id in targets %}<div class="dest">→ <b>{{ targets[t.id] }}</b></div>{% endif %}
+            {% for n in p.notes %}<span class="badge warn">{{ n }}</span>{% endfor %}
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="actions sticky-actions">
+    <button class="btn" name="action" value="preview" type="submit">Vorschau aktualisieren</button>
+    <button class="btn primary" name="action" value="apply" type="submit">Übernehmen</button>
+  </div>
+  <p class="hint">Tags werden geschrieben{% if settings.square_cover %}, das Cover quadratisch zugeschnitten{% endif %}{% if settings.strip_description %} und die Videobeschreibung entfernt{% endif %}. Im Verlauf lässt sich alles rückgängig machen. Deine Korrekturen an Interpret/Autor merkt sich die App für künftige Downloads.</p>
+  <div class="actions"><button class="btn danger small" name="action" value="ignore" type="submit" formnovalidate>Ausblenden (nicht bearbeiten)</button></div>
+</form>
+<script>
+  document.querySelectorAll('.tracks input[type=checkbox]').forEach(function (c) {
+    c.addEventListener('change', function () { c.closest('li').classList.toggle('off', !c.checked); });
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Verlauf – MP3-Tagger{% endblock %}
+{% block content %}
+<h1>Verlauf</h1>
+<div class="card">
+  {% if not entries %}<p class="muted">Noch nichts übernommen.</p>{% endif %}
+  <ul class="list">
+    {% for e in entries %}
+    <li class="{{ 'undone' if e.undone }}">
+      <div class="main">
+        <div class="title">{{ e.label }}</div>
+        <div class="meta">{{ e.time|dtime }} · {{ e['items']|length }} Datei(en) · {{ 'Hörbuch' if e.kind == HOERBUCH else 'Musik' }}{% if e.auto %} · <span class="badge">Automatik</span>{% endif %}{% if e.undone %} · rückgängig gemacht{% endif %}</div>
+        <details><summary class="small muted" style="font-weight:400">Dateien</summary>
+          <ul class="paths">{% for it in e['items'] %}<li>{{ it.new }}</li>{% endfor %}</ul>
+        </details>
+        {% for x in e.errors %}<div class="small bad">{{ x }}</div>{% endfor %}
+      </div>
+      {% if not e.undone %}
+      <form method="post" action="/verlauf/{{ e.id }}/rueckgaengig" class="inline">
+        <button class="btn small" type="submit">Rückgängig</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}
