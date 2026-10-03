@@ -16,7 +16,7 @@ TAG = os.environ.get("IMPORT_TAG", "Bank-Import")
 DEFAULT_CATEGORIES = [
     "Wohnen", "Energie", "Lebensmittel", "Haushalt", "Mobilität", "Kommunikation",
     "Versicherungen", "Kinder", "Gesundheit", "Gemeinde & Spenden", "Freizeit & Urlaub",
-    "Abos & Software", "Einkommen", "Gebühren & Zinsen",
+    "Fitness", "Business & Projekte", "Einkommen",
 ]
 
 app = Flask(__name__)
