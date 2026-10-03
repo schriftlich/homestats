@@ -1,15 +1,18 @@
-# HomeStats – Zählerstände für Umbrel
+# HomeStats – eigene Apps für Umbrel
 
-Eigene Umbrel-App, mit der du Zählerstände für Gas, Wasser und Strom erfasst und auswertest: Verbrauch pro Monat, Kosten, Vorjahresvergleich und eine Hochrechnung gegen deine Abschläge (Nachzahlung oder Guthaben).
+Dieses Repo ist ein **Umbrel Community App Store** mit zwei Apps:
 
-Dieses Repo ist gleichzeitig ein **Umbrel Community App Store**.
+- **Zählerstände** – Zählerstände für Gas, Wasser und Strom erfassen und auswerten: Verbrauch pro Monat, Kosten, Vorjahresvergleich und eine Hochrechnung gegen deine Abschläge (Nachzahlung oder Guthaben).
+- **Bank-Import** – Kontoauszug (CSV) hochladen, Vorschau prüfen, Buchungen direkt in Firefly III übernehmen. Siehe [Bank-Import](#bank-import).
 
 ```
-umbrel-app-store.yml          Store-ID "homestats"
-homestats-zaehler/            Umbrel-Paket (Manifest, Compose, Icon)
-app/                          Quellcode (FastAPI, SQLite, Jinja2/HTMX, Chart.js) + Dockerfile
-.github/workflows/            CI (Tests) und Release (Multi-Arch-Image nach ghcr.io)
-docker-compose.dev.yml        lokal starten mit Beispieldaten
+umbrel-app-store.yml              Store-ID "homestats"
+homestats-zaehler/                Umbrel-Paket Zählerstände (Manifest, Compose, Icon)
+app/                              Quellcode Zählerstände (FastAPI, SQLite, Jinja2/HTMX, Chart.js) + Dockerfile
+homestats-bankimport/             Umbrel-Paket Bank-Import
+bankimport/                       Quellcode Bank-Import (Flask) + Dockerfile
+.github/workflows/                CI (Tests) und Releases (Multi-Arch-Images nach ghcr.io)
+docker-compose.dev.yml            Zählerstände lokal starten mit Beispieldaten
 ```
 
 ## Lokal testen
@@ -78,3 +81,30 @@ Die App ist durch die Umbrel-Anmeldung geschützt und braucht keinen eigenen Log
 - **Kosten je Tag:** Grundpreis ÷ Tage des Monats + Verbrauch × Arbeitspreis. Es gilt jeweils der Tarif, der an diesem Tag gültig ist, Preiswechsel werden dadurch anteilig gerechnet. Bei Gas: kWh = m³ × Zustandszahl × Brennwert.
 - **Hochrechnung:** Gemessene Tage im Abrechnungszeitraum zählen mit dem echten Verbrauch. Für die übrigen Tage wird der Tagesschnitt desselben Kalendermonats aus den Vorjahren genommen. Ohne Vorjahr gilt der Durchschnitt, bei Gas gewichtet mit einem typischen Heizprofil. Dazu kommt die Summe der Abschläge, auf Wunsch auch nur 11 pro Jahr.
 - **Plausibilität:** Die App warnt, wenn ein Stand kleiner ist als der vorige oder der Verbrauch mehr als ±50 % vom Erwartungswert abweicht. Das Speichern wird dabei nicht blockiert.
+
+## Bank-Import
+
+Kontoauszug als CSV hochladen → Vorschau → Buchungen landen direkt in Firefly III (über die REST-Schnittstelle, ohne den Data Importer).
+
+- Das eigene Konto wird an der IBAN in der Datei erkannt. Dafür muss das Konto in Firefly als Bestandskonto **mit IBAN** angelegt sein.
+- Überweisungen auf andere eigene Konten (ebenfalls mit IBAN in Firefly) werden als Umbuchung angelegt.
+- Schon vorhandene Buchungen (gleiches Datum, Betrag und Beschreibung oder gleiche externe ID) und vorgemerkte Umsätze werden übersprungen.
+- Verwendungszwecke über 500 Zeichen werden gekürzt, der volle Text steht dann in der Notiz.
+- Firefly-Regeln werden beim Import angewendet, jede Buchung bekommt das Schlagwort „Bank-Import“.
+- Unterstützt bisher: DKB (neues Banking, CSV-Export). Weitere Banken: neuen Parser in `bankimport/bankimport/banks.py` ergänzen.
+
+**Einrichtung in der App:** Firefly → Profil → Fernzugriff und Token → Persönliche Zugangstoken → neuen Token erstellen. In Bank-Import unter **Einstellungen** einfügen und „Verbindung testen“. Der Token liegt in `~/umbrel/app-data/homestats-bankimport/data/settings/settings.json`.
+
+**Release:** wie oben, aber mit eigenem Tag-Präfix:
+```sh
+git tag -a bankimport-v0.2.0 -m "Version 0.2.0" -m "- Neue Funktion X"
+git push origin bankimport-v0.2.0
+```
+Beim ersten Release das Package `homestats-bankimport` auf GitHub öffentlich stellen (Profil → Packages → Package settings → Change visibility → Public).
+
+**Lokal testen:**
+```sh
+cd bankimport
+pip install -r requirements-dev.txt
+python -m pytest -q
+```

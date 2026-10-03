@@ -1,14 +1,17 @@
 """Setzt Version, Image (Tag + Digest) und Release Notes im Umbrel-Paket.
 
 Aufruf: python bump.py <version> <image-ref> [<notes-datei>]
+Paket und Image lassen sich über BUMP_APP und BUMP_IMAGE wählen
+(Standard: Zählerstände-App).
 """
+import os
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-APP = ROOT / "homestats-zaehler"
-IMAGE = "ghcr.io/schriftlich/homestats-zaehler"
+APP = ROOT / os.environ.get("BUMP_APP", "homestats-zaehler")
+IMAGE = os.environ.get("BUMP_IMAGE", "ghcr.io/schriftlich/homestats-zaehler")
 
 
 def release_notes_block(notes: str) -> str:
