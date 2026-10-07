@@ -15,8 +15,26 @@
 </form>
 
 <div class="card">
+  <h2>Logo</h2>
+  <p class="muted">Erscheint oben rechts auf der ersten Seite der Mitgliederliste. PNG mit transparentem Hintergrund sieht am besten aus.</p>
+  {% if has_logo %}
+  <div class="logo-preview"><img src="/logo.png?v={{ range(100000)|random }}" alt="Aktuelles Logo"></div>
+  {% endif %}
+  <form method="post" action="/einstellungen/logo" enctype="multipart/form-data">
+    <label for="logofile">{{ 'Anderes Logo hochladen' if has_logo else 'Logo hochladen' }} (PNG oder JPG)</label>
+    <input id="logofile" name="file" type="file" accept="image/png,image/jpeg" required>
+    <button class="btn primary block" type="submit">Hochladen</button>
+  </form>
+  {% if has_logo %}
+  <form method="post" action="/einstellungen/logo/loeschen" onsubmit="return confirm('Logo entfernen?')">
+    <button class="btn danger block" type="submit">Logo entfernen</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="card">
   <h2>Backup herunterladen</h2>
-  <p class="muted">ZIP-Datei mit je einer CSV für Haushalte, Personen und Einstellungen. Lässt sich direkt in Excel oder LibreOffice öffnen. Enthält alle persönlichen Daten – sicher aufbewahren.</p>
+  <p class="muted">ZIP-Datei mit je einer CSV für Haushalte, Personen und Einstellungen, dazu das Logo. Lässt sich direkt in Excel oder LibreOffice öffnen. Enthält alle persönlichen Daten – sicher aufbewahren.</p>
   <a class="btn primary" href="/daten/export">Backup herunterladen</a>
 </div>
 

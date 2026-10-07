@@ -14,10 +14,11 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.utils import ImageReader
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.platypus import (
-    BaseDocTemplate, Frame, FrameBreak, KeepTogether, NextPageTemplate, PageBreak,
+    BaseDocTemplate, Frame, FrameBreak, Image, KeepTogether, NextPageTemplate, PageBreak,
     PageTemplate, Paragraph, Spacer, Table, TableStyle,
 )
 from xml.sax.saxutils import escape
@@ -52,6 +53,7 @@ class Options:
     email: bool = True
     birthdays: bool = True
     stand: date | None = None
+    logo: bytes | None = None  # PNG, nur auf der ersten Seite
 
 
 def listed_persons(h: Household) -> list[Person]:
@@ -179,6 +181,26 @@ def _birthday_section(households: list[Household]) -> list:
     return flow
 
 
+LOGO_MAX_W = 62 * mm
+LOGO_MAX_H = 26 * mm
+
+
+def _title_block(intro: list, logo: bytes | None):
+    """Titel links, Logo rechtsbündig daneben (falls vorhanden)."""
+    if not logo:
+        return KeepTogether(intro)
+    iw, ih = ImageReader(io.BytesIO(logo)).getSize()
+    scale = min(LOGO_MAX_W / iw, LOGO_MAX_H / ih)
+    img = Image(io.BytesIO(logo), width=iw * scale, height=ih * scale, hAlign="RIGHT")
+    t = Table([[intro, img]], colWidths=[CONTENT_W - LOGO_MAX_W - 4 * mm, LOGO_MAX_W + 4 * mm])
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return t
+
+
 class _Canvas(rl_canvas.Canvas):
     """Zweiter Durchlauf für „Seite x von y“."""
 
@@ -224,15 +246,13 @@ def render(households: list[Household], opt: Options) -> bytes:
     title = "Mitgliederliste"
     header = " · ".join(x for x in (f"{title} {opt.church_name}".strip(), f"Stand {ddate(stand)}") if x)
 
-    flow: list = [
+    intro = [
         Paragraph(escape(title), S_TITLE),
         Paragraph(escape(opt.church_name), S_SUB) if opt.church_name else Spacer(1, 0),
-        Paragraph(
-            f"Stand {ddate(stand)} · {len(listed)} Haushalte · {len(persons)} Personen,"
-            f" davon {members} Mitglieder · <b>fett</b> = Mitglied", S_SUB,
-        ),
-        Spacer(1, 6 * mm),
+        Paragraph(f"Stand {ddate(stand)} · <b>fett</b> = Mitglied", S_SUB),
+        Paragraph(f"{len(listed)} Haushalte · {len(persons)} Personen, davon {members} Mitglieder", S_SUB),
     ]
+    flow: list = [_title_block(intro, opt.logo), Spacer(1, 6 * mm)]
     if not listed:
         flow.append(_p("Keine Einträge mit Einwilligung vorhanden.", S_CELL))
     for h in listed:

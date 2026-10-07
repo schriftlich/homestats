@@ -10,6 +10,7 @@ import io
 import sqlite3
 import zipfile
 
+from . import logo
 from .db import TABLES
 
 BOM = "﻿"
@@ -34,6 +35,8 @@ def export_zip(conn: sqlite3.Connection) -> bytes:
             for row in conn.execute(f"SELECT * FROM {table} ORDER BY 1"):
                 w.writerow(["" if v is None else v for v in row])
             zf.writestr(f"{table}.csv", BOM + out.getvalue())
+        if (data := logo.load()):
+            zf.writestr("logo.png", data)
     return buf.getvalue()
 
 
@@ -95,4 +98,9 @@ def import_zip(conn: sqlite3.Connection, data: bytes) -> dict[str, int]:
     except sqlite3.Error as e:
         conn.execute("ROLLBACK")
         raise BackupError(f"Import fehlgeschlagen, nichts wurde geändert: {e}")
+    if "logo.png" in names:
+        try:
+            logo.save(zf.read("logo.png"))
+        except logo.LogoError:
+            pass  # Daten sind eingespielt; ein defektes Logo soll das nicht verhindern
     return counts

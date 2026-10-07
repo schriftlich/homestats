@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import __version__, backup, db, demo, fmt, pdf
+from . import __version__, backup, db, demo, fmt, logo, pdf
 from .db import Household, Person
 
 log = logging.getLogger("gemeinde")
@@ -291,6 +291,7 @@ def list_pdf(email: str = "", geburtstage: str = "", conn=Depends(get_conn)):
     s = db.settings(conn)
     data = pdf.render(db.households(conn), pdf.Options(
         church_name=s["church_name"], note=s["pdf_note"], email=bool(email), birthdays=bool(geburtstage),
+        logo=logo.load(),
     ))
     name = f"Mitgliederliste_{date.today().isoformat()}.pdf"
     return Response(data, media_type="application/pdf",
@@ -299,7 +300,32 @@ def list_pdf(email: str = "", geburtstage: str = "", conn=Depends(get_conn)):
 
 @app.get("/einstellungen", response_class=HTMLResponse)
 def settings_page(request: Request, ok: str = "", conn=Depends(get_conn)):
-    return render(request, "settings.html", settings=db.settings(conn), ok=ok, result=None, error=None)
+    return render(request, "settings.html", settings=db.settings(conn), ok=ok, result=None, error=None,
+                  has_logo=logo.path().exists())
+
+
+@app.get("/logo.png")
+def logo_png():
+    data = logo.load()
+    if not data:
+        raise HTTPException(404)
+    return Response(data, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/einstellungen/logo", response_class=HTMLResponse)
+async def logo_upload(request: Request, file: UploadFile = File(...), conn=Depends(get_conn)):
+    try:
+        logo.save(await file.read())
+    except logo.LogoError as e:
+        return render(request, "settings.html", settings=db.settings(conn), ok="", result=None,
+                      error=str(e), has_logo=logo.path().exists())
+    return redirect("/einstellungen", ok="Logo gespeichert")
+
+
+@app.post("/einstellungen/logo/loeschen")
+def logo_delete():
+    logo.delete()
+    return redirect("/einstellungen", ok="Logo entfernt")
 
 
 @app.post("/einstellungen")
@@ -329,4 +355,4 @@ async def data_import(request: Request, file: UploadFile = File(...), confirm: s
             ctx["settings"] = db.settings(conn)
         except backup.BackupError as e:
             ctx["error"] = str(e)
-    return render(request, "settings.html", **ctx)
+    return render(request, "settings.html", has_logo=logo.path().exists(), **ctx)

@@ -108,3 +108,29 @@ def test_dates():
     assert next_birthday(date(2000, 2, 29), date(2027, 2, 1)) == date(2027, 2, 28)
     assert next_birthday(date(2000, 5, 1), date(2026, 5, 2)) == date(2027, 5, 1)
     assert age_on(date(2000, 5, 1), date(2026, 5, 1)) == 26
+
+
+def _png(w=300, h=100) -> bytes:
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGBA", (w, h), (180, 140, 100, 255)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_logo_upload_pdf_and_backup(client):
+    add_family(client)
+    r = client.post("/einstellungen/logo", files={"file": ("x.txt", b"kein Bild")})
+    assert "kein lesbares Bild" in r.text
+    r = client.post("/einstellungen/logo", files={"file": ("logo.png", _png())})
+    assert "Logo gespeichert" in r.text
+    assert client.get("/logo.png").headers["content-type"] == "image/png"
+    reader = PdfReader(io.BytesIO(client.get("/liste.pdf?geburtstage=1").content))
+    assert len(reader.pages[0].images) == 1
+    assert all(len(p.images) == 0 for p in reader.pages[1:])
+
+    data = client.get("/daten/export").content
+    assert "logo.png" in zipfile.ZipFile(io.BytesIO(data)).namelist()
+    client.post("/einstellungen/logo/loeschen")
+    assert client.get("/logo.png").status_code == 404
+    client.post("/daten/import", files={"file": ("b.zip", data)}, data={"confirm": "1"})
+    assert client.get("/logo.png").status_code == 200
