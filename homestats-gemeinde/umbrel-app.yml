@@ -2,7 +2,7 @@ manifestVersion: 1
 id: homestats-gemeinde
 category: social
 name: Gemeindeverzeichnis
-version: "0.1.0"
+version: "0.2.0"
 tagline: Mitglieder und Familien der Gemeinde pflegen – Mitgliederliste als PDF
 icon: https://raw.githubusercontent.com/schriftlich/homestats/main/homestats-gemeinde/icon.svg
 description: >-
@@ -22,7 +22,7 @@ description: >-
 
   - CSV-Backup und Wiederherstellung
 releaseNotes: >-
-  Erste Version
+  Logo und Geburtstage
 
 developer: schriftlich
 website: https://github.com/schriftlich/homestats
