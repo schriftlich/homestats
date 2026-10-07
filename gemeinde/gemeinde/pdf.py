@@ -17,7 +17,8 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.platypus import (
-    KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+    BaseDocTemplate, Frame, FrameBreak, KeepTogether, NextPageTemplate, PageBreak,
+    PageTemplate, Paragraph, Spacer, Table, TableStyle,
 )
 from xml.sax.saxutils import escape
 
@@ -115,63 +116,65 @@ def _household_block(h: Household, opt: Options) -> KeepTogether:
     return KeepTogether([t, Spacer(1, 3.5 * mm)])
 
 
-ROWS_PER_COLUMN = 52
+TOP_MARGIN = 16 * mm
+BOTTOM_MARGIN = 18 * mm
+COL_GAP = 8 * mm
+COL_W = (CONTENT_W - COL_GAP) / 2
+TITLE_H = 14 * mm
+
+
+def _page_templates() -> list[PageTemplate]:
+    """Liste einspaltig; Geburtstage zweispaltig – ReportLab füllt erst die
+    linke, dann die rechte Spalte und bricht erst um, wenn beide voll sind."""
+    w, h = A4
+    body_h = h - TOP_MARGIN - BOTTOM_MARGIN
+
+    def cols(top_offset: float, prefix: str) -> list[Frame]:
+        return [
+            Frame(MARGIN_X + i * (COL_W + COL_GAP), BOTTOM_MARGIN, COL_W, body_h - top_offset,
+                  id=f"{prefix}{i}", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+            for i in range(2)
+        ]
+
+    title = Frame(MARGIN_X, h - TOP_MARGIN - TITLE_H, CONTENT_W, TITLE_H, id="title",
+                  leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+    return [
+        PageTemplate("list", [Frame(MARGIN_X, BOTTOM_MARGIN, CONTENT_W, body_h, id="list",
+                                    leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)]),
+        PageTemplate("cols_first", [title, *cols(TITLE_H, "f")]),
+        PageTemplate("cols", cols(0, "c")),
+    ]
 
 
 def _birthday_section(households: list[Household]) -> list:
-    """Zweispaltige Übersicht nach Monaten; lange Listen laufen seitenweise
-    erst links, dann rechts weiter."""
     entries: dict[int, list[tuple[date, str]]] = {m: [] for m in range(1, 13)}
     for h in households:
         for p in listed_persons(h):
             if p.birthday:
                 entries[p.birthday.month].append((p.birthday, h.full_name(p)))
 
-    lines: list[tuple] = []  # ("m", Monatsname) oder ("e", datum, name)
+    widths = [13 * mm, COL_W - 24 * mm, 11 * mm]
+    flow: list = [
+        NextPageTemplate("cols_first"), PageBreak(),
+        Paragraph("Geburtstage", S_TITLE), FrameBreak(),
+        NextPageTemplate("cols"),
+    ]
     for m in range(1, 13):
         items = sorted(entries[m], key=lambda e: (e[0].day, e[1]))
-        if items:
-            lines.append(("m", MONTHS_LONG[m - 1]))
-            lines += [("e", b, name) for b, name in items]
-
-    half = (CONTENT_W - 8 * mm) / 2
-    widths = [13 * mm, half - 24 * mm, 11 * mm]
-
-    def cells(line) -> list:
-        if line is None:
-            return ["", "", ""]
-        if line[0] == "m":
-            return [Paragraph(escape(line[1]), S_MONTH), "", ""]
-        _, b, name = line
-        return [_p(f"{b.day:02d}.{b.month:02d}.", S_CELL), _p(name, S_CELL), _p(str(b.year), S_SMALL)]
-
-    flow: list = [Paragraph("Geburtstage", S_TITLE), Spacer(1, 3 * mm)]
-    per_page = 2 * ROWS_PER_COLUMN
-    for start in range(0, len(lines), per_page):
-        chunk = lines[start:start + per_page]
-        n = (len(chunk) + 1) // 2
-        # Monatsüberschrift nicht als letzte Zeile der linken Spalte
-        if n < len(chunk) and chunk[n - 1][0] == "m":
-            n -= 1
-        left, right = chunk[:n], chunk[n:]
-        rows, style = [], [
+        if not items:
+            continue
+        rows = [[Paragraph(escape(MONTHS_LONG[m - 1]), S_MONTH), "", ""]]
+        rows += [[_p(f"{b.day:02d}.{b.month:02d}.", S_CELL), _p(name, S_CELL), _p(str(b.year), S_SMALL)]
+                 for b, name in items]
+        # Läuft ein Monat in die nächste Spalte weiter, wird die Überschrift wiederholt.
+        t = Table(rows, colWidths=widths, hAlign="LEFT", repeatRows=1)
+        t.setStyle(TableStyle([
+            ("SPAN", (0, 0), (-1, 0)),
             ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
             ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
             ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-        ]
-        for i in range(max(len(left), len(right))):
-            l = left[i] if i < len(left) else None
-            r = right[i] if i < len(right) else None
-            rows.append(cells(l) + [""] + cells(r))
-            for line, c0 in ((l, 0), (r, 4)):
-                if line and line[0] == "m":
-                    style.append(("SPAN", (c0, i), (c0 + 2, i)))
-                elif line:
-                    style.append(("LINEBELOW", (c0, i), (c0 + 2, i), 0.3, LINE))
-        t = Table(rows, colWidths=widths + [8 * mm] + widths, hAlign="LEFT")
-        t.setStyle(TableStyle(style))
-        if start:
-            flow.append(PageBreak())
+            ("LINEBELOW", (0, 1), (-1, -1), 0.3, LINE),
+        ]))
         flow.append(t)
     return flow
 
@@ -236,12 +239,12 @@ def render(households: list[Household], opt: Options) -> bytes:
         flow.append(_household_block(h, opt))
 
     if opt.birthdays and any(p.birthday for p in persons):
-        flow += [PageBreak(), *_birthday_section(listed)]
+        flow += _birthday_section(listed)
 
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(
+    doc = BaseDocTemplate(
         buf, pagesize=A4, leftMargin=MARGIN_X, rightMargin=MARGIN_X,
-        topMargin=16 * mm, bottomMargin=18 * mm,
+        topMargin=TOP_MARGIN, bottomMargin=BOTTOM_MARGIN, pageTemplates=_page_templates(),
         title=f"{title} {opt.church_name}".strip(), author=opt.church_name or "Gemeinde",
     )
     doc.build(flow, canvasmaker=lambda *a, **k: _Canvas(*a, header=header, note=opt.note, **k))
