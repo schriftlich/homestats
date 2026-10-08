@@ -125,6 +125,7 @@ Haushalte (Familienname, Anschrift, Festnetz) mit den Personen darin (Geburtstag
 - **Austritt, Wegzug, Tod:** Datum bei der Person setzen statt löschen. Sie verschwindet aus Liste und Geburtstagen, die Historie bleibt.
 - **Backup:** *Einstellungen → Backup herunterladen* (ZIP mit CSV). Enthält alle persönlichen Daten.
 - **Karte:** Haushalte als Stecknadeln (Leaflet, lokal eingebunden; Kartenbilder von OpenStreetMap). Koordinaten werden beim Speichern über OpenStreetMap Nominatim ermittelt – übertragen werden nur Straße, PLZ und Ort, keine Namen. Ungenaue oder nicht gefundene Adressen lassen sich beim Haushalt per Klick/Ziehen korrigieren; von Hand gesetzte Positionen bleiben bis zu einem Umzug erhalten.
+- **Erreichbarkeit:** Ist die Anschrift der Gemeinde hinterlegt, zeigt die Karte Zonen für 15 und 30 Minuten Fahrzeit (Auto, Fahrrad oder zu Fuß) samt Zählung der Mitglieder je Zone. Berechnet über den FOSSGIS-Valhalla-Dienst; übertragen wird nur der Standort der Gemeinde, die Zuordnung der Haushalte passiert lokal. Ergebnis wird zwischengespeichert.
 - Lokal testen: `cd gemeinde && GEMEINDE_DEMO=1 uvicorn gemeinde.main:app --reload` (legt Beispieldaten an).
 - Release: Tag `gemeinde-v1.2.3` (Workflow „Release Gemeindeverzeichnis“).
 

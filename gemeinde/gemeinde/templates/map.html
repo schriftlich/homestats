@@ -15,13 +15,55 @@
 <div class="msg err">{{ batch.error }}</div>
 {% endif %}
 
+{% if church %}
+<div class="tabs" role="tablist" aria-label="Verkehrsmittel für die Fahrzeit">
+  {% for key, (costing, label) in MODES.items() %}
+  <a href="/karte?modus={{ key }}" class="{{ 'on' if key == modus }}">{{ label }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+{% if zone_error %}<div class="msg warn">Fahrzeit-Zonen gerade nicht verfügbar: {{ zone_error }}</div>{% endif %}
+
 <div id="map" class="mapbox"></div>
 <div class="legend">
   <span><i style="background:#2a78d6"></i>mit Mitgliedern</span>
   <span><i style="background:#8a8983"></i>ohne Mitglieder</span>
   <span><i style="background:#e0a21a"></i>nur Ort bekannt</span>
   <span><i style="background:#1a1a19"></i>Gemeinde</span>
+  {% if reach_stats %}
+  <span><i class="zone z15"></i>bis 15 Min.</span>
+  <span><i class="zone z30"></i>bis 30 Min.</span>
+  {% endif %}
 </div>
+
+{% if reach_stats %}
+<div class="card">
+  <h2>Erreichbarkeit der Gemeinde ({{ MODES[modus][1] }})</h2>
+  <div class="grid3">
+    {% for m, label, st in reach_stats %}
+    <div class="card tile"><div class="label"><i class="zone {{ 'z15' if m == 15 else ('z30' if m == 30 else 'zout') }}"></i>{{ label }}</div>
+      <div class="value">{{ st.members }}</div>
+      <div class="sub">Mitglieder · {{ st.households }} Haush. · {{ st.persons }} Pers.</div></div>
+    {% endfor %}
+  </div>
+  {% for m, label, st in reach_stats if st.entries %}
+  <details>
+    <summary>{{ label }}: {{ st.households }} Haushalt{{ 'e' if st.households != 1 }}</summary>
+    <ul class="list">
+    {% for h in st.entries %}
+      <li><a class="main plain" href="/haushalt/{{ h.id }}"><div class="title">{{ h.name }}</div>
+        <div class="meta">{{ h.address }}{% if h.geo == 'ungenau' %} · Lage ungenau{% endif %}</div></a>
+        <div class="amount">{{ h.active_persons|selectattr('member')|list|length }} Mitgl.</div></li>
+    {% endfor %}
+    </ul>
+  </details>
+  {% endfor %}
+  <p class="hint">Fahrzeit ohne Verkehr, berechnet mit OpenStreetMap-Daten (FOSSGIS-Routingdienst). Dafür wird nur der Standort der Gemeinde übertragen. Öffentliche Verkehrsmittel sind nicht berücksichtigt.
+    <a href="/karte?modus={{ modus }}&neu=1">Neu berechnen</a></p>
+</div>
+{% elif not church %}
+<p class="hint">Tipp: Unter <a href="/einstellungen">Einstellungen</a> die Anschrift der Gemeinde eintragen. Dann zeigt die Karte, wer in 15 und 30 Minuten bei der Gemeinde ist.</p>
+{% endif %}
 
 {% if stale and not batch.running %}
 <form class="card" method="post" action="/karte/ermitteln">
@@ -55,16 +97,22 @@
 {% block scripts %}
 <script>
   (function () {
-    var pins = {{ pins_json|safe }}, church = {{ church_json|safe }}, G = window.GemeindeMap;
+    var pins = {{ pins_json|safe }}, church = {{ church_json|safe }}, zones = {{ zones_json|safe }}, G = window.GemeindeMap;
     var map = G.base("map");
     var bounds = [];
+    [["30", "#7c6cd6", 0.10], ["15", "#1baf7a", 0.18]].forEach(function (z) {
+      if (!zones[z[0]]) return;
+      L.geoJSON(zones[z[0]], { interactive: false, style: { color: z[1], weight: 1.5, fillColor: z[1], fillOpacity: z[2] } }).addTo(map);
+    });
     pins.forEach(function (p) {
       var kind = p.geo === "ungenau" ? "ungenau" : (p.members ? "member" : "guest");
       var m = L.marker([p.lat, p.lon], { icon: G.pinIcon(kind), title: p.name }).addTo(map);
       m.bindPopup('<a href="/haushalt/' + p.id + '">' + G.esc(p.name) + '</a><br>' + G.esc(p.address) +
         '<br><span style="color:#7a7974">' + p.persons + (p.persons === 1 ? " Person" : " Personen") +
         (p.members ? ", " + p.members + " Mitglied" + (p.members === 1 ? "" : "er") : "") +
-        (p.geo === "ungenau" ? "<br>Lage ungenau (nur Ort)" : "") + "</span>");
+        (p.geo === "ungenau" ? "<br>Lage ungenau (nur Ort)" : "") +
+        (Object.keys(zones).length ? "<br>" + (p.band ? "bis " + p.band + " Min. zur Gemeinde" : "über 30 Min. zur Gemeinde") : "") +
+        "</span>");
       bounds.push([p.lat, p.lon]);
     });
     if (church) {

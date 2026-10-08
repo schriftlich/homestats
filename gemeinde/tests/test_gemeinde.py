@@ -12,8 +12,9 @@ from gemeinde.fmt import age_on, next_birthday, parse_date
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
     """Tests dürfen nie echt bei OpenStreetMap anfragen."""
-    from gemeinde import geo
+    from gemeinde import geo, reach
     monkeypatch.setattr(geo, "_fetch", lambda params: [])
+    monkeypatch.setattr(reach, "_fetch", lambda *a: {"features": []})
 
 
 @pytest.fixture
@@ -222,3 +223,61 @@ def test_batch_geocode(client, fake_osm, monkeypatch):
         time.sleep(0.05)
     r = client.get("/karte")
     assert "noch ohne Position" not in r.text and "48.83" in r.text
+
+
+SQUARE = lambda d: {"type": "Polygon", "coordinates": [[[9.31 - d, 48.83 - d], [9.31 + d, 48.83 - d],
+                                                         [9.31 + d, 48.83 + d], [9.31 - d, 48.83 + d],
+                                                         [9.31 - d, 48.83 - d]]]}
+
+
+def test_reach_zones(client, fake_osm, monkeypatch):
+    from gemeinde import reach
+    sent = []
+
+    def iso(lat, lon, costing):
+        sent.append((lat, lon, costing))
+        return {"features": [
+            {"properties": {"contour": 30.0}, "geometry": SQUARE(0.2)},
+            {"properties": {"contour": 15.0}, "geometry": SQUARE(0.01)},
+        ]}
+
+    monkeypatch.setattr(reach, "_fetch", iso)
+    r = client.get("/karte")
+    assert "Erreichbarkeit" not in r.text and "Anschrift der Gemeinde eintragen" in r.text
+
+    client.post("/einstellungen", data={"church_name": "G", "pdf_note": "", "church_address": "Kirchweg 1"})
+    add_family(client)  # Hauptstr. 5 -> 48.8301/9.3166 -> in 15er-Zone
+    client.post("/haushalt", data={"name": "Fern", "street": "X 1", "zip": "73430", "city": "Aalen"})  # 9.31/48.83? nein: 10.09
+    client.post("/person", data={"household_id": 2, "first_name": "Eva", "member": "1", "consent": "1"})
+    r = client.get("/karte")
+    assert "Erreichbarkeit der Gemeinde (Auto)" in r.text
+    assert '"band": 15' in r.text and '"band": null' in r.text
+    assert len(sent) == 1 and sent[0][2] == "auto"
+    client.get("/karte")
+    assert len(sent) == 1  # aus dem Zwischenspeicher
+    client.get("/karte?modus=rad")
+    assert sent[-1][2] == "bicycle"
+    client.get("/karte?neu=1")
+    assert len(sent) == 3
+
+
+def test_reach_service_down(client, fake_osm, monkeypatch):
+    from gemeinde import geo, reach
+    monkeypatch.setattr(reach, "_fetch", lambda *a: (_ for _ in ()).throw(geo.GeoError("offline")))
+    client.post("/einstellungen", data={"church_name": "G", "pdf_note": "", "church_address": "Kirchweg 1"})
+    r = client.get("/karte")
+    assert r.status_code == 200 and "Fahrzeit-Zonen gerade nicht verfügbar" in r.text
+
+
+def test_point_in_multipolygon():
+    from gemeinde.reach import contains
+    holed = {"type": "Polygon", "coordinates": [SQUARE(1)["coordinates"][0], SQUARE(0.1)["coordinates"][0]]}
+    assert contains(holed, 48.83 + 0.5, 9.31) and not contains(holed, 48.83, 9.31)
+    multi = {"type": "MultiPolygon", "coordinates": [SQUARE(0.1)["coordinates"]]}
+    assert contains(multi, 48.83, 9.31) and not contains(multi, 50, 9.31)
+
+
+def test_valhalla_query_has_no_plus():
+    from gemeinde.reach import build_query
+    q = build_query({"locations": [{"lat": 1.5, "lon": 2}], "costing": "auto"})
+    assert "+" not in q and q.startswith("json=%7B%22locations%22")

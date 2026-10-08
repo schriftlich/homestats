@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 
 import json
 
-from . import __version__, backup, db, demo, fmt, geo, logo, pdf
+from . import __version__, backup, db, demo, fmt, geo, logo, pdf, reach
 from .db import Household, Person
 
 log = logging.getLogger("gemeinde")
@@ -237,17 +237,44 @@ def _church(s: dict) -> dict | None:
 
 
 @app.get("/karte", response_class=HTMLResponse)
-def map_page(request: Request, conn=Depends(get_conn)):
+def map_page(request: Request, modus: str = "auto", neu: str = "", conn=Depends(get_conn)):
+    if modus not in reach.MODES:
+        modus = "auto"
     hs = [h for h in db.households(conn) if h.active_persons]
-    pins = [{
-        "id": h.id, "name": h.name, "address": h.address, "lat": h.lat, "lon": h.lon, "geo": h.geo,
-        "persons": len(h.active_persons), "members": sum(p.member for p in h.active_persons),
-    } for h in hs if h.has_pos]
+    church = _church(db.settings(conn))
+
+    zones, zone_error = {}, ""
+    if church:
+        try:
+            zones = reach.zones(church["lat"], church["lon"], modus, refresh=bool(neu))
+        except geo.GeoError as e:
+            zone_error = str(e)
+
+    pins, bands = [], {15: [], 30: [], None: []}
+    for h in hs:
+        if not h.has_pos:
+            continue
+        b = reach.band(zones, h.lat, h.lon) if zones else None
+        if zones:
+            bands[b].append(h)
+        pins.append({
+            "id": h.id, "name": h.name, "address": h.address, "lat": h.lat, "lon": h.lon, "geo": h.geo,
+            "persons": len(h.active_persons), "members": sum(p.member for p in h.active_persons),
+            "band": b,
+        })
+
+    def summary(items):
+        return {"households": len(items), "persons": sum(len(h.active_persons) for h in items),
+                "members": sum(p.member for h in items for p in h.active_persons), "entries": items}
+
     missing = [h for h in hs if not h.has_pos or h.geo in ("ungenau", "fehlt")]
     stale = sum(1 for h in hs if h.geo_stale)
     return render(
-        request, "map.html", pins_json=_js(pins),
-        church_json=_js(_church(db.settings(conn))),
+        request, "map.html", pins_json=_js(pins), church_json=_js(church),
+        zones_json=_js({str(k): v for k, v in zones.items()}),
+        reach_stats=[(15, "bis 15 Min.", summary(bands[15])), (30, "15–30 Min.", summary(bands[30])),
+                     (None, "über 30 Min.", summary(bands[None]))] if zones else None,
+        modus=modus, MODES=reach.MODES, zone_error=zone_error, church=church,
         missing=missing, stale=stale, batch=geo.batch, n_households=len(hs),
     )
 
