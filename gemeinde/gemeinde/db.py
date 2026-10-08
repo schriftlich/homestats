@@ -42,6 +42,16 @@ MIGRATIONS: list[str] = [
         value TEXT NOT NULL
     );
     """,
+    # 2: Koordinaten je Haushalt für die Karte.
+    # geo: '' = noch nicht ermittelt, 'auto' = Straße gefunden, 'ungenau' = nur PLZ/Ort,
+    #      'fehlt' = nicht gefunden, 'hand' = von Hand gesetzt.
+    # geo_addr: Anschrift, für die die Koordinaten gelten (erkennt Umzüge).
+    """
+    ALTER TABLE households ADD COLUMN lat REAL;
+    ALTER TABLE households ADD COLUMN lon REAL;
+    ALTER TABLE households ADD COLUMN geo TEXT NOT NULL DEFAULT '';
+    ALTER TABLE households ADD COLUMN geo_addr TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 TABLES = ["households", "persons", "settings"]
@@ -49,6 +59,9 @@ TABLES = ["households", "persons", "settings"]
 DEFAULT_SETTINGS = {
     "church_name": "",
     "pdf_note": "Vertraulich – nur für den Gebrauch innerhalb der Gemeinde. Bitte nicht weitergeben.",
+    "church_address": "",
+    "church_lat": "",
+    "church_lon": "",
 }
 
 
@@ -84,10 +97,28 @@ class Household:
     phone: str = ""
     note: str = ""
     persons: list[Person] = field(default_factory=list)
+    lat: float | None = None
+    lon: float | None = None
+    geo: str = ""
+    geo_addr: str = ""
 
     @property
     def place(self) -> str:
         return " ".join(p for p in (self.zip, self.city) if p)
+
+    @property
+    def address(self) -> str:
+        """Anschrift für die Geokodierung (ohne Namen)."""
+        return ", ".join(x for x in (self.street, self.place) if x)
+
+    @property
+    def has_pos(self) -> bool:
+        return self.lat is not None and self.lon is not None
+
+    @property
+    def geo_stale(self) -> bool:
+        """Koordinaten fehlen oder gehören zu einer alten Anschrift."""
+        return bool(self.address) and (self.geo == "" or self.geo_addr != self.address)
 
     @property
     def active_persons(self) -> list[Person]:
@@ -141,7 +172,8 @@ def _person(r) -> Person:
 
 def households(conn) -> list[Household]:
     hs = {
-        r["id"]: Household(r["id"], r["name"], r["street"], r["zip"], r["city"], r["phone"], r["note"])
+        r["id"]: Household(r["id"], r["name"], r["street"], r["zip"], r["city"], r["phone"], r["note"],
+                           lat=r["lat"], lon=r["lon"], geo=r["geo"], geo_addr=r["geo_addr"])
         for r in conn.execute("SELECT * FROM households")
     }
     for r in conn.execute("SELECT * FROM persons"):
@@ -202,6 +234,12 @@ def save_person(conn, p: Person) -> int:
         return conn.execute(
             f"INSERT INTO persons ({cols}) VALUES ({','.join('?' * len(vals))})", vals
         ).lastrowid
+
+
+def set_geo(conn, hid: int, lat: float | None, lon: float | None, geo: str, geo_addr: str) -> None:
+    with conn:
+        conn.execute("UPDATE households SET lat=?, lon=?, geo=?, geo_addr=? WHERE id=?",
+                     (lat, lon, geo, geo_addr, hid))
 
 
 def consent_all(conn, hid: int, day: date) -> int:

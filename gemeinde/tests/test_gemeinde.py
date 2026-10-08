@@ -9,6 +9,13 @@ from pypdf import PdfReader
 from gemeinde.fmt import age_on, next_birthday, parse_date
 
 
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Tests dürfen nie echt bei OpenStreetMap anfragen."""
+    from gemeinde import geo
+    monkeypatch.setattr(geo, "_fetch", lambda params: [])
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("GEMEINDE_DATA_DIR", str(tmp_path))
@@ -26,7 +33,7 @@ def pdf_text(data: bytes) -> str:
 def add_family(client):
     r = client.post("/haushalt", data={"name": "Müller", "street": "Hauptstr. 5", "zip": "73430",
                                        "city": "Aalen", "phone": "07361 1234"}, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/person/neu?haushalt=1"
+    assert r.status_code == 303 and r.headers["location"].startswith("/person/neu?haushalt=1")
     client.post("/person", data={"household_id": 1, "first_name": "Peter", "birthday": "1980-05-01",
                                  "mobile": "0151 111", "member": "1", "consent": "1"})
     client.post("/person", data={"household_id": 1, "first_name": "Anna", "birthday": "03.02.1982",
@@ -134,3 +141,84 @@ def test_logo_upload_pdf_and_backup(client):
     assert client.get("/logo.png").status_code == 404
     client.post("/daten/import", files={"file": ("b.zip", data)}, data={"confirm": "1"})
     assert client.get("/logo.png").status_code == 200
+
+
+@pytest.fixture
+def fake_osm(monkeypatch):
+    """Ersetzt Nominatim: bekannte Straßen -> Treffer, PLZ allein -> Ortsmitte."""
+    from gemeinde import geo
+    calls = []
+
+    def fetch(params):
+        calls.append(params)
+        if params.get("q"):
+            return [{"lat": "48.83", "lon": "9.31"}]
+        if params.get("street") == "Hauptstr. 5":
+            return [{"lat": "48.8301", "lon": "9.3166"}]
+        if params.get("street"):
+            return []
+        if params.get("postalcode") == "73430":
+            return [{"lat": "48.83", "lon": "10.09"}]
+        return []
+
+    monkeypatch.setattr(geo, "_fetch", fetch)
+    return calls
+
+
+def test_geocode_on_save_and_manual_fix(client, fake_osm):
+    add_family(client)  # Hauptstr. 5 -> exakt
+    r = client.get("/karte")
+    assert '"name": "Müller"' in r.text and "48.8301" in r.text
+    # keine Namen an OSM
+    assert all("Müller" not in str(c) for c in fake_osm)
+
+    r = client.post("/haushalt", data={"name": "Weber", "street": "Unbekannt 1", "zip": "73430", "city": "Aalen"})
+    assert "nur im Ort" in r.text
+    r = client.post("/haushalt", data={"name": "Nirgends", "street": "X", "zip": "00000", "city": "Y"})
+    assert "nicht gefunden" in r.text
+    r = client.get("/karte")
+    assert '"Weber"' not in r.text  # ohne Personen nicht auf der Karte
+    client.post("/person", data={"household_id": 2, "first_name": "Eva", "consent": "1"})
+    client.post("/person", data={"household_id": 3, "first_name": "Udo", "consent": "1"})
+    r = client.get("/karte")
+    assert "Ungenau oder nicht gefunden" in r.text and "nur Ort" in r.text and "nicht gefunden" in r.text
+    assert '"geo": "ungenau"' in r.text
+
+    # Von Hand korrigieren; Speichern ohne Adressänderung behält die Position
+    r = client.post("/haushalt/2/position", data={"lat": "48.9", "lon": "10.1"})
+    assert "Position gespeichert" in r.text
+    n = len(fake_osm)
+    client.post("/haushalt", data={"id": 2, "name": "Weber", "street": "Unbekannt 1", "zip": "73430",
+                                   "city": "Aalen", "phone": "123"})
+    assert len(fake_osm) == n
+    # Umzug -> neu nachschlagen
+    client.post("/haushalt", data={"id": 2, "name": "Weber", "street": "Hauptstr. 5", "zip": "73430", "city": "Aalen"})
+    assert len(fake_osm) > n
+    assert client.post("/haushalt/2/position", data={"lat": "999", "lon": "1"}).status_code == 400
+
+
+def test_church_and_xss(client, fake_osm):
+    client.post("/einstellungen", data={"church_name": "</script><b>X", "pdf_note": "",
+                                        "church_address": "Kirchweg 1, 71332 Waiblingen"})
+    add_family(client)
+    r = client.get("/karte")
+    assert "</script><b>X" not in r.text and "48.83" in r.text
+
+
+def test_batch_geocode(client, fake_osm, monkeypatch):
+    from gemeinde import geo
+    monkeypatch.setattr(geo, "_fetch", lambda p: (_ for _ in ()).throw(geo.GeoError("offline")))
+    r = client.post("/haushalt", data={"name": "Offline", "street": "A 1", "zip": "1", "city": "B"})
+    assert "nicht erreichbar" in r.text
+    client.post("/person", data={"household_id": 1, "first_name": "Eva", "consent": "1"})
+    r = client.get("/karte")
+    assert "noch ohne Position" in r.text
+    monkeypatch.setattr(geo, "_fetch", lambda p: [{"lat": "48.83", "lon": "9.31"}])
+    client.post("/karte/ermitteln")
+    import time
+    for _ in range(50):
+        if not geo.batch.running:
+            break
+        time.sleep(0.05)
+    r = client.get("/karte")
+    assert "noch ohne Position" not in r.text and "48.83" in r.text

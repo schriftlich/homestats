@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 {% block title %}{{ h.name }} – Gemeindeverzeichnis{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', path='vendor/leaflet/leaflet.css') }}">
+<script src="{{ url_for('static', path='vendor/leaflet/leaflet.js') }}"></script>
+<script src="{{ url_for('static', path='map.js') }}"></script>
+{% endblock %}
 {% block content %}
 <p class="small"><a href="/">← Alle Haushalte</a></p>
 {% if ok %}<div class="msg ok">{{ ok }}</div>{% endif %}
@@ -39,4 +44,53 @@
   <p class="hint">Nur Personen mit Einwilligung erscheinen in der PDF-Liste. Bei Kindern willigen die Eltern ein.</p>
   {% endif %}
 </div>
+
+{% if h.address or h.has_pos %}
+<div class="card" id="lage">
+  <h2>Lage auf der Karte</h2>
+  {% if h.geo == 'hand' %}<p class="hint" style="margin-top:0">Von Hand gesetzt.</p>
+  {% elif h.geo == 'ungenau' %}<div class="msg warn">Die Straße wurde nicht gefunden, die Nadel steht nur im Ort. Bitte an die richtige Stelle ziehen.</div>
+  {% elif h.geo == 'fehlt' %}<div class="msg warn">Die Anschrift wurde nicht gefunden. Tippe auf die Karte, um die Nadel zu setzen.</div>
+  {% elif not h.has_pos %}<p class="hint" style="margin-top:0">Noch keine Position. Tippe auf die Karte oder lass sie automatisch ermitteln.</p>
+  {% else %}<p class="hint" style="margin-top:0">Automatisch ermittelt. Stimmt die Stelle nicht, die Nadel verschieben.</p>{% endif %}
+  <div id="minimap" class="mapbox small"></div>
+  <form method="post" action="/haushalt/{{ h.id }}/position" id="posform" hidden>
+    <input type="hidden" name="lat" id="lat"><input type="hidden" name="lon" id="lon">
+    <button class="btn primary block" type="submit" style="margin-top:0">Neue Position speichern</button>
+  </form>
+  {% if h.address %}
+  <form method="post" action="/haushalt/{{ h.id }}/position/auto">
+    <button class="btn block" type="submit">Automatisch neu ermitteln</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if h.address or h.has_pos %}
+<script>
+  (function () {
+    var pos = {{ pos_json|safe }}, church = {{ church_json|safe }}, G = window.GemeindeMap;
+    var map = G.base("minimap"), marker = null;
+    var start = pos ? [pos.lat, pos.lon] : (church ? [church.lat, church.lon] : [51.2, 10.4]);
+    map.setView(start, pos ? 16 : (church ? 12 : 6));
+    var kind = "{{ 'ungenau' if h.geo == 'ungenau' else ('member' if h.active_persons|selectattr('member')|list else 'guest') }}";
+    function moved(ll) {
+      document.getElementById("lat").value = ll.lat.toFixed(6);
+      document.getElementById("lon").value = ll.lng.toFixed(6);
+      document.getElementById("posform").hidden = false;
+    }
+    function place(ll) {
+      if (!marker) {
+        marker = L.marker(ll, { icon: G.pinIcon(kind), draggable: true }).addTo(map);
+        marker.on("dragend", function () { moved(marker.getLatLng()); });
+      } else {
+        marker.setLatLng(ll);
+      }
+    }
+    if (pos) place(start);
+    map.on("click", function (e) { place(e.latlng); moved(e.latlng); });
+  })();
+</script>
+{% endif %}
 {% endblock %}

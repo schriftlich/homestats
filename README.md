@@ -124,6 +124,7 @@ Haushalte (Familienname, Anschrift, Festnetz) mit den Personen darin (Geburtstag
 - **Einwilligung:** Nur Personen mit gesetztem Haken „Einwilligung liegt vor“ kommen ins PDF. Alle anderen bleiben intern gespeichert und werden unter *Liste* aufgeführt.
 - **Austritt, Wegzug, Tod:** Datum bei der Person setzen statt löschen. Sie verschwindet aus Liste und Geburtstagen, die Historie bleibt.
 - **Backup:** *Einstellungen → Backup herunterladen* (ZIP mit CSV). Enthält alle persönlichen Daten.
+- **Karte:** Haushalte als Stecknadeln (Leaflet, lokal eingebunden; Kartenbilder von OpenStreetMap). Koordinaten werden beim Speichern über OpenStreetMap Nominatim ermittelt – übertragen werden nur Straße, PLZ und Ort, keine Namen. Ungenaue oder nicht gefundene Adressen lassen sich beim Haushalt per Klick/Ziehen korrigieren; von Hand gesetzte Positionen bleiben bis zu einem Umzug erhalten.
 - Lokal testen: `cd gemeinde && GEMEINDE_DEMO=1 uvicorn gemeinde.main:app --reload` (legt Beispieldaten an).
 - Release: Tag `gemeinde-v1.2.3` (Workflow „Release Gemeindeverzeichnis“).
 

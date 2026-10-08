@@ -12,7 +12,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import __version__, backup, db, demo, fmt, logo, pdf
+import json
+
+from . import __version__, backup, db, demo, fmt, geo, logo, pdf
 from .db import Household, Person
 
 log = logging.getLogger("gemeinde")
@@ -146,7 +148,9 @@ def household_view(request: Request, hid: int, ok: str = "", conn=Depends(get_co
     h = db.household(conn, hid)
     if not h:
         raise HTTPException(404)
-    return render(request, "household.html", h=h, ok=ok)
+    s = db.settings(conn)
+    return render(request, "household.html", h=h, ok=ok, church_json=_js(_church(s)),
+                  pos_json=_js({"lat": h.lat, "lon": h.lon} if h.has_pos else None))
 
 
 @app.get("/haushalt/{hid}/bearbeiten", response_class=HTMLResponse)
@@ -171,9 +175,87 @@ def household_save(
         raise HTTPException(404)
     new = not h.id
     hid = db.save_household(conn, h)
+    msg = "Haushalt gespeichert"
+    try:
+        res = geo.update_household(conn, db.household(conn, hid))
+        if res and res.status == "fehlt":
+            msg += " – Anschrift auf der Karte nicht gefunden, bitte Nadel von Hand setzen"
+        elif res and res.status == "ungenau":
+            msg += " – Straße nicht gefunden, Nadel steht nur im Ort"
+    except geo.GeoError:
+        msg += " – Karte: OpenStreetMap gerade nicht erreichbar, später unter Karte nachholen"
     if new:
-        return redirect("/person/neu", haushalt=hid)
-    return redirect(f"/haushalt/{hid}", ok="Haushalt gespeichert")
+        return redirect("/person/neu", haushalt=hid, hinweis=msg.partition(" – ")[2])
+    return redirect(f"/haushalt/{hid}", ok=msg)
+
+
+def _coord(v: str, lo: float, hi: float) -> float:
+    try:
+        x = float(v.replace(",", "."))
+    except ValueError:
+        raise HTTPException(400, "Ungültige Koordinate")
+    if not lo <= x <= hi:
+        raise HTTPException(400, "Ungültige Koordinate")
+    return x
+
+
+@app.post("/haushalt/{hid}/position")
+def household_position(hid: int, lat: str = Form(...), lon: str = Form(...), conn=Depends(get_conn)):
+    h = db.household(conn, hid)
+    if not h:
+        raise HTTPException(404)
+    db.set_geo(conn, hid, _coord(lat, -90, 90), _coord(lon, -180, 180), "hand", h.address)
+    return redirect(f"/haushalt/{hid}", ok="Position gespeichert")
+
+
+@app.post("/haushalt/{hid}/position/auto")
+def household_position_auto(hid: int, conn=Depends(get_conn)):
+    h = db.household(conn, hid)
+    if not h:
+        raise HTTPException(404)
+    h.geo = ""
+    try:
+        res = geo.update_household(conn, h)
+    except geo.GeoError:
+        return redirect(f"/haushalt/{hid}", ok="OpenStreetMap gerade nicht erreichbar – bitte später erneut versuchen")
+    text = {"auto": "Position automatisch ermittelt", "ungenau": "Nur der Ort wurde gefunden",
+            "fehlt": "Anschrift nicht gefunden"}.get(res.status if res else "", "Keine Anschrift hinterlegt")
+    return redirect(f"/haushalt/{hid}", ok=text)
+
+
+def _js(data) -> str:
+    """JSON sicher in <script> einbetten."""
+    return json.dumps(data, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
+
+def _church(s: dict) -> dict | None:
+    try:
+        return {"lat": float(s["church_lat"]), "lon": float(s["church_lon"]),
+                "name": s["church_name"] or "Gemeinde", "address": s["church_address"]}
+    except ValueError:
+        return None
+
+
+@app.get("/karte", response_class=HTMLResponse)
+def map_page(request: Request, conn=Depends(get_conn)):
+    hs = [h for h in db.households(conn) if h.active_persons]
+    pins = [{
+        "id": h.id, "name": h.name, "address": h.address, "lat": h.lat, "lon": h.lon, "geo": h.geo,
+        "persons": len(h.active_persons), "members": sum(p.member for p in h.active_persons),
+    } for h in hs if h.has_pos]
+    missing = [h for h in hs if not h.has_pos or h.geo in ("ungenau", "fehlt")]
+    stale = sum(1 for h in hs if h.geo_stale)
+    return render(
+        request, "map.html", pins_json=_js(pins),
+        church_json=_js(_church(db.settings(conn))),
+        missing=missing, stale=stale, batch=geo.batch, n_households=len(hs),
+    )
+
+
+@app.post("/karte/ermitteln")
+def map_geocode(nochmal: str = Form("")):
+    geo.batch.start(force=bool(nochmal))
+    return redirect("/karte")
 
 
 @app.post("/haushalt/{hid}/loeschen")
@@ -189,13 +271,14 @@ def household_consent(hid: int, conn=Depends(get_conn)):
 
 
 @app.get("/person/neu", response_class=HTMLResponse)
-def person_new(request: Request, haushalt: int, conn=Depends(get_conn)):
+def person_new(request: Request, haushalt: int, hinweis: str = "", conn=Depends(get_conn)):
     h = db.household(conn, haushalt)
     if not h:
         raise HTTPException(404)
     # Ab dem dritten Eintrag ist es meist ein Kind
     p = Person(None, h.id, "", child=len(h.persons) >= 2)
-    return render(request, "person_form.html", p=p, h=h, households=db.households(conn), error=None)
+    return render(request, "person_form.html", p=p, h=h, households=db.households(conn), error=None,
+                  hinweis=hinweis)
 
 
 @app.get("/person/{pid}", response_class=HTMLResponse)
@@ -329,9 +412,25 @@ def logo_delete():
 
 
 @app.post("/einstellungen")
-def settings_save(church_name: str = Form(""), pdf_note: str = Form(""), conn=Depends(get_conn)):
-    db.save_settings(conn, {"church_name": clean(church_name), "pdf_note": clean(pdf_note)})
-    return redirect("/einstellungen", ok="Gespeichert")
+def settings_save(church_name: str = Form(""), pdf_note: str = Form(""), church_address: str = Form(""),
+                  conn=Depends(get_conn)):
+    values = {"church_name": clean(church_name), "pdf_note": clean(pdf_note),
+              "church_address": clean(church_address)}
+    msg = "Gespeichert"
+    old = db.settings(conn)
+    if values["church_address"] != old["church_address"] or (values["church_address"] and not old["church_lat"]):
+        values["church_lat"] = values["church_lon"] = ""
+        if values["church_address"]:
+            try:
+                res = geo.lookup_text(values["church_address"])
+                if res.lat is not None:
+                    values["church_lat"], values["church_lon"] = str(res.lat), str(res.lon)
+                else:
+                    msg = "Gespeichert – Anschrift der Gemeinde wurde auf der Karte nicht gefunden"
+            except geo.GeoError:
+                msg = "Gespeichert – OpenStreetMap nicht erreichbar, Gemeinde fehlt vorerst auf der Karte"
+    db.save_settings(conn, values)
+    return redirect("/einstellungen", ok=msg)
 
 
 @app.get("/daten/export")

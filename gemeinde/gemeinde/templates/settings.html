@@ -6,9 +6,12 @@
 {% if result %}<div class="msg ok">{{ result }}</div>{% endif %}
 {% if error %}<div class="msg err">{{ error }}</div>{% endif %}
 <form class="card" method="post" action="/einstellungen">
-  <h2>PDF</h2>
+  <h2>Gemeinde</h2>
   <label for="church_name">Name der Gemeinde</label>
   <input id="church_name" name="church_name" value="{{ settings.church_name }}">
+  <label for="church_address">Anschrift der Gemeinde (für die Karte)</label>
+  <input id="church_address" name="church_address" value="{{ settings.church_address }}" placeholder="Straße Nr., PLZ Ort">
+  {% if settings.church_address and not settings.church_lat %}<p class="hint">Noch nicht auf der Karte gefunden – Schreibweise prüfen und erneut speichern.</p>{% endif %}
   <label for="pdf_note">Hinweis in der Fußzeile</label>
   <input id="pdf_note" name="pdf_note" value="{{ settings.pdf_note }}" maxlength="150">
   <button class="btn primary block" type="submit">Speichern</button>

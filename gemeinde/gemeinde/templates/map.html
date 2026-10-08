@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Karte – Gemeindeverzeichnis{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', path='vendor/leaflet/leaflet.css') }}">
+<script src="{{ url_for('static', path='vendor/leaflet/leaflet.js') }}"></script>
+<script src="{{ url_for('static', path='map.js') }}"></script>
+{% if batch.running %}<meta http-equiv="refresh" content="3">{% endif %}
+{% endblock %}
+{% block content %}
+<h1>Karte</h1>
+
+{% if batch.running %}
+<div class="msg warn">Koordinaten werden ermittelt … {{ batch.done }} von {{ batch.total }}. Die Seite aktualisiert sich selbst.</div>
+{% elif batch.error %}
+<div class="msg err">{{ batch.error }}</div>
+{% endif %}
+
+<div id="map" class="mapbox"></div>
+<div class="legend">
+  <span><i style="background:#2a78d6"></i>mit Mitgliedern</span>
+  <span><i style="background:#8a8983"></i>ohne Mitglieder</span>
+  <span><i style="background:#e0a21a"></i>nur Ort bekannt</span>
+  <span><i style="background:#1a1a19"></i>Gemeinde</span>
+</div>
+
+{% if stale and not batch.running %}
+<form class="card" method="post" action="/karte/ermitteln">
+  <h2>{{ stale }} Haushalt{{ 'e' if stale != 1 }} noch ohne Position</h2>
+  <p class="muted" style="margin-top:0">Die Koordinaten werden bei OpenStreetMap nachgeschlagen. Übertragen werden nur Straße, PLZ und Ort, keine Namen. Das dauert etwa eine Sekunde pro Haushalt.</p>
+  <button class="btn primary block" type="submit">Jetzt ermitteln</button>
+</form>
+{% endif %}
+
+{% if missing %}
+<div class="card">
+  <h2>Ungenau oder nicht gefunden</h2>
+  <p class="muted" style="margin-top:0">Beim Haushalt unter „Lage auf der Karte“ die Nadel an die richtige Stelle setzen.</p>
+  <ul class="list">
+  {% for h in missing %}
+    <li><a class="main plain" href="/haushalt/{{ h.id }}#lage"><div class="title">{{ h.name }}</div>
+      <div class="meta">{{ h.address or 'keine Anschrift' }}</div></a>
+      <div class="amount">{% if not h.address %}<span class="badge">ohne Anschrift</span>{% elif h.geo == 'ungenau' %}<span class="badge warn">nur Ort</span>{% elif h.geo == 'fehlt' %}<span class="badge warn">nicht gefunden</span>{% else %}<span class="badge">offen</span>{% endif %}</div></li>
+  {% endfor %}
+  </ul>
+  {% if not batch.running and missing|selectattr('geo', 'in', ['ungenau', 'fehlt'])|list %}
+  <form method="post" action="/karte/ermitteln">
+    <input type="hidden" name="nochmal" value="1">
+    <button class="btn block" type="submit">Ungenaue erneut nachschlagen</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+<p class="muted small">{{ n_households }} aktive Haushalte. Gemeinde-Anschrift unter <a href="/einstellungen">Einstellungen</a>.</p>
+{% endblock %}
+{% block scripts %}
+<script>
+  (function () {
+    var pins = {{ pins_json|safe }}, church = {{ church_json|safe }}, G = window.GemeindeMap;
+    var map = G.base("map");
+    var bounds = [];
+    pins.forEach(function (p) {
+      var kind = p.geo === "ungenau" ? "ungenau" : (p.members ? "member" : "guest");
+      var m = L.marker([p.lat, p.lon], { icon: G.pinIcon(kind), title: p.name }).addTo(map);
+      m.bindPopup('<a href="/haushalt/' + p.id + '">' + G.esc(p.name) + '</a><br>' + G.esc(p.address) +
+        '<br><span style="color:#7a7974">' + p.persons + (p.persons === 1 ? " Person" : " Personen") +
+        (p.members ? ", " + p.members + " Mitglied" + (p.members === 1 ? "" : "er") : "") +
+        (p.geo === "ungenau" ? "<br>Lage ungenau (nur Ort)" : "") + "</span>");
+      bounds.push([p.lat, p.lon]);
+    });
+    if (church) {
+      L.marker([church.lat, church.lon], { icon: G.churchIcon(), title: church.name, zIndexOffset: -1000 })
+        .addTo(map).bindPopup("<strong>" + G.esc(church.name) + "</strong><br>" + G.esc(church.address));
+      bounds.push([church.lat, church.lon]);
+    }
+    if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
+    else if (bounds.length === 1) map.setView(bounds[0], 14);
+    else map.setView([51.2, 10.4], 6);
+  })();
+</script>
+{% endblock %}

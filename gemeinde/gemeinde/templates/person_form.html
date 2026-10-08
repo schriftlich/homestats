@@ -4,6 +4,7 @@
 <p class="small"><a href="/haushalt/{{ h.id }}">← {{ h.name }}</a></p>
 <h1>{{ 'Person bearbeiten' if p.id else 'Neue Person' }}</h1>
 {% if error %}<div class="msg err">{{ error }}</div>{% endif %}
+{% if hinweis %}<div class="msg warn">Karte: {{ hinweis }}</div>{% endif %}
 <form class="card" method="post" action="/person">
   <input type="hidden" name="id" value="{{ p.id or '' }}">
   <div class="fields2">
