@@ -9,7 +9,7 @@ services:
 
   web:
     # Wird von .github/workflows/release-gemeinde.yml beim Release auf Tag + Digest gesetzt.
-    image: ghcr.io/schriftlich/homestats-gemeinde:0.2.0@sha256:86c111e1f773ea4e42e55e1d0f074524a8eab0520e72d9bf197d4d0215242348
+    image: ghcr.io/schriftlich/homestats-gemeinde:0.3.0@sha256:3249b6cb35179dc8178d141cef8cf8f2d446554634ca6648bc34b4bd65701de3
     user: "1000:1000"
     init: true
     restart: on-failure
