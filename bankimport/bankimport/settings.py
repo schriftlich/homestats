@@ -19,7 +19,8 @@ def load() -> dict:
             "sure_url": os.environ.get("SURE_URL", DEFAULT_SURE_URL),
             "sure_key": os.environ.get("SURE_API_KEY", ""),
             "sure_link": os.environ.get("SURE_LINK", ""),
-            "sure_accounts": {}}
+            "sure_accounts": {},
+            "bank_accounts": {}}  # Bank (ohne IBAN in der Datei) -> Konto-ID im Ziel
     f = _file()
     if f.exists():
         try:

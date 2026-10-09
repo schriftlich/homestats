@@ -57,6 +57,10 @@ class Firefly:
                 res[iban] = (acc["id"], a.get("name", ""))
         return res
 
+    def all_accounts(self):
+        """Alle Bestandskonten als Liste von (id, name) – für Dateien ohne eigene IBAN."""
+        return [(a["id"], a["attributes"].get("name", "")) for a in self._get_all("/accounts", type="asset")]
+
     def account_transactions(self, account_id, start, end):
         out = []
         for grp in self._get_all(f"/accounts/{account_id}/transactions",
@@ -163,7 +167,7 @@ class CategoryLearner:
 class PlannedRow:
     booking: Booking
     kind: str            # withdrawal | deposit | transfer
-    status: str          # neu | duplikat | vorgemerkt
+    status: str          # neu | duplikat | vorgemerkt | übersprungen
     other: str           # Anzeige: Gegenpartei bzw. eigenes Konto
     payload: dict = field(default_factory=dict)
     category: str = ""   # Vorschlag aus der Historie
@@ -181,17 +185,21 @@ class Plan:
         return [r for r in self.rows if r.status == "neu"]
 
 
-def build_plan(ff: Firefly, st: Statement, tag: str = "Bank-Import") -> Plan:
+def build_plan(ff: Firefly, st: Statement, tag: str = "Bank-Import", account=None) -> Plan:
+    """account: (id, name) des Zielkontos – nötig, wenn die Datei keine eigene IBAN enthält."""
     if not st.bookings:
         raise FireflyError("Die Datei enthält keine Buchungen.")
     own = ff.asset_accounts()
-    if not st.account_iban:
-        raise FireflyError("In der Datei steht keine IBAN des eigenen Kontos.")
-    if st.account_iban not in own:
+    if account:
+        acc_id, acc_name = account
+    elif not st.account_iban:
+        raise FireflyError("In der Datei steht keine IBAN des eigenen Kontos – bitte das Zielkonto auswählen.")
+    elif st.account_iban not in own:
         raise FireflyError(getattr(ff, "MISSING_ACCOUNT",
             "Zur IBAN {iban} gibt es in Firefly kein Bestandskonto. "
             "Lege das Konto in Firefly an und trage dort die IBAN ein.").format(iban=st.account_iban))
-    acc_id, acc_name = own[st.account_iban]
+    else:
+        acc_id, acc_name = own[st.account_iban]
 
     start = min(b.date for b in st.bookings) - timedelta(days=1)
     end = max(b.date for b in st.bookings) + timedelta(days=1)
@@ -209,9 +217,10 @@ def build_plan(ff: Firefly, st: Statement, tag: str = "Bank-Import") -> Plan:
     rows = []
     for b in st.bookings:
         ext = external_id(st, b)
-        key = _key(b.date, b.amount, b.description or b.counterparty)
         out = b.amount < 0
         other_acc = own.get(b.iban) if b.iban and b.iban != st.account_iban else None
+        if other_acc and other_acc[0] == acc_id:
+            other_acc = None  # Gegenseite ist das Zielkonto selbst
 
         if other_acc:
             kind = "transfer"
@@ -219,8 +228,11 @@ def build_plan(ff: Firefly, st: Statement, tag: str = "Bank-Import") -> Plan:
         else:
             kind = "withdrawal" if out else "deposit"
             other = b.counterparty or "(unbekannt)"
+        key = _key(b.date, b.amount, b.description or b.counterparty or other)
 
-        if not b.booked:
+        if b.skip:
+            status = "übersprungen"
+        elif not b.booked:
             status = "vorgemerkt"
         elif ext in existing_ext or existing[key] > 0:
             status = "duplikat"
@@ -233,7 +245,7 @@ def build_plan(ff: Firefly, st: Statement, tag: str = "Bank-Import") -> Plan:
         if kind != "transfer" and status == "neu":
             cat = learner.suggest(b.counterparty, b.iban) or ""
         rows.append(PlannedRow(b, kind, status, other,
-                               _payload(b, kind, acc_id, other_acc, ext, tag), cat))
+                               _payload(b, kind, acc_id, other_acc, ext, tag, other), cat))
     return Plan(acc_id, acc_name, st, rows)
 
 
@@ -243,8 +255,8 @@ def _key_from_ff(t):
     return _key(d, t["amount"], t.get("description") or "")
 
 
-def _payload(b: Booking, kind, acc_id, other_acc, ext, tag):
-    desc = _short(b.description) or b.counterparty or "(ohne Verwendungszweck)"
+def _payload(b: Booking, kind, acc_id, other_acc, ext, tag, other=""):
+    desc = _short(b.description) or b.counterparty or other or "(ohne Verwendungszweck)"
     split = {
         "type": kind,
         "date": b.date.isoformat(),
@@ -255,7 +267,7 @@ def _payload(b: Booking, kind, acc_id, other_acc, ext, tag):
         # Zusatzinfos für Ziele ohne Firefly-Kontenmodell (Sure); Firefly bekommt sie nicht
         "x_account_id": acc_id,
         "x_direction": "out" if b.amount < 0 else "in",
-        "x_counterparty": b.counterparty or "",
+        "x_counterparty": b.counterparty or other or "",
     }
     if desc != b.description and b.description:
         split["notes"] = b.description
@@ -263,7 +275,7 @@ def _payload(b: Booking, kind, acc_id, other_acc, ext, tag):
         if v:
             split[k] = v
 
-    name = b.counterparty or "(unbekannt)"
+    name = b.counterparty or other or "(unbekannt)"
     if kind == "transfer":
         if b.amount < 0:
             split["source_id"], split["destination_id"] = acc_id, other_acc[0]

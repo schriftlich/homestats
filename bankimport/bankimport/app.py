@@ -7,7 +7,7 @@ import uuid
 from flask import Flask, abort, redirect, render_template_string, request, url_for
 
 from . import settings
-from .banks import ParseError, parse
+from .banks import SUPPORTED, ParseError, parse
 from .firefly import Firefly, FireflyError, build_plan, run_import
 from .sure import Sure
 
@@ -23,7 +23,7 @@ DEFAULT_CATEGORIES = [
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 
-PLANS = {}  # Vorschau-ID -> (Zeitstempel, Plan)
+PLANS = {}  # Vorschau-ID -> (Zeitstempel, Plan oder None, Datei-Inhalt)
 LOCK = threading.Lock()
 
 
@@ -62,7 +62,7 @@ def target_link() -> str:
 
 def _cleanup():
     cutoff = time.time() - 3600
-    for k in [k for k, (t, _) in PLANS.items() if t < cutoff]:
+    for k in [k for k, (t, *_) in PLANS.items() if t < cutoff]:
         PLANS.pop(k, None)
 
 
@@ -108,7 +108,7 @@ padding:10px 18px;font-size:15px;font-weight:600;cursor:pointer;text-decoration:
 .stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .pill{border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600;white-space:nowrap}
 .neu{background:var(--neu);color:var(--neu-t)}.duplikat{background:var(--dup);color:var(--dup-t)}
-.vorgemerkt{background:var(--vor);color:var(--vor-t)}.fehler{background:var(--err);color:var(--err-t)}
+.vorgemerkt{background:var(--vor);color:var(--vor-t)}.übersprungen{background:var(--dup);color:var(--dup-t)}.fehler{background:var(--err);color:var(--err-t)}
 .tbl{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 th{color:var(--muted);font-weight:600;font-size:13px}
@@ -139,8 +139,18 @@ UPLOAD = """<div class="card"><h2>Kontoauszug hochladen</h2>
 <form method="post" action="{{ url_for('preview') }}" enctype="multipart/form-data">
 <div class="drop"><input type="file" name="file" accept=".csv,text/csv" required></div>
 <div class="actions"><button type="submit">Vorschau anzeigen</button></div></form>
-<p class="sub" style="margin-top:14px">Unterstützt: DKB-Umsatzliste (CSV-Export aus dem Banking).
-Das Konto wird an der IBAN erkannt, bereits importierte Buchungen werden übersprungen.</p></div>"""
+<p class="sub" style="margin-top:14px">Unterstützt: {{ supported }} – jeweils der CSV-Export aus dem Banking.
+Das Konto wird an der IBAN erkannt (Ayvens: einmal auswählen, danach gemerkt). Bereits importierte Buchungen werden übersprungen.</p></div>"""
+
+PICK = """<div class="card"><h2>Zielkonto für {{ bank }}</h2>
+<p class="sub">Die Datei enthält keine eigene IBAN. In welches Konto in {{ target }} sollen die Buchungen? Die Auswahl wird für künftige {{ bank }}-Dateien gemerkt.</p>
+<form method="post" action="{{ url_for('pick_account', pid=pid) }}">
+<label for="account">Konto</label>
+<select id="account" name="account" style="max-width:100%;width:100%;padding:10px 12px;font-size:15px" required>
+{% for id, name in accounts %}<option value="{{ id }}" {{ 'selected' if id == current }}>{{ name }}</option>{% endfor %}
+</select>
+<div class="actions"><button type="submit">Weiter zur Vorschau</button>
+<a class="btn sec" href="{{ url_for('index') }}">Abbrechen</a></div></form></div>"""
 
 SETUP = """<div class="card"><h2>Einrichtung</h2>
 <p>Bank-Import braucht einen Zugang zu {{ target }}, bevor es losgehen kann.</p>
@@ -200,10 +210,12 @@ SETTINGS = """<form method="post" action="{{ url_for('settings_page') }}">
 <button class="sec" type="submit">Fehlende Kategorien anlegen</button></div></form></div>"""
 
 PREVIEW = """<div class="card"><h2>Vorschau – {{ plan.account_name }} ({{ plan.statement.bank }})</h2>
+{% if not plan.statement.account_iban %}<p class="sub" style="margin:-6px 0 12px">Zielkonto gemerkt für {{ plan.statement.bank }} · <a href="{{ url_for('pick_account', pid=pid) }}">anderes Konto wählen</a></p>{% endif %}
 <div class="stats">
 <span class="pill neu">{{ n_new }} neu</span>
 <span class="pill duplikat">{{ n_dup }} schon vorhanden</span>
 {% if n_pend %}<span class="pill vorgemerkt">{{ n_pend }} vorgemerkt (werden übersprungen)</span>{% endif %}
+{% if n_skip %}<span class="pill übersprungen">{{ n_skip }} Unterkonto-Bewegungen (werden übersprungen)</span>{% endif %}
 </div>
 {% if n_new and n_learned %}<p class="sub" style="margin-bottom:12px">{{ n_learned }} von {{ n_new }} neuen Buchungen haben einen Kategorie-Vorschlag aus deinen bisherigen Buchungen.</p>{% endif %}
 <form method="post" action="{{ url_for('do_import', pid=pid) }}">
@@ -254,7 +266,7 @@ def index():
         ff()
     except NotConfigured:
         return page(SETUP, target=target_name())
-    return page(UPLOAD, error=request.args.get("error"))
+    return page(UPLOAD, error=request.args.get("error"), supported=SUPPORTED)
 
 
 def _settings_page(error=None, notice=None, accounts=None):
@@ -325,16 +337,31 @@ def create_categories():
     return _settings_page(error, notice)
 
 
-@app.post("/vorschau")
-def preview():
-    f = request.files.get("file")
-    if not f or not f.filename:
-        return redirect(url_for("index", error="Bitte eine Datei auswählen."))
+def _store(plan, raw, pid=None):
+    pid = pid or uuid.uuid4().hex
+    with LOCK:
+        _cleanup()
+        PLANS[pid] = (time.time(), plan, raw)
+    return pid
+
+
+def _show_preview(raw, pid=None, account_id=None):
+    """Datei einlesen, Plan bauen und Vorschau zeigen – oder nach dem Zielkonto fragen."""
     categories = []
     try:
-        st = parse(f.read())
+        st = parse(raw)
         client = ff()
-        plan = build_plan(client, st, TAG)
+        account = None
+        if not st.account_iban:
+            accounts = client.all_accounts()
+            names = dict(accounts)
+            account_id = account_id or settings.load()["bank_accounts"].get(st.bank)
+            if account_id not in names:
+                pid = _store(None, raw, pid)
+                return page(PICK, pid=pid, bank=st.bank, accounts=accounts, current=None,
+                            target=target_name())
+            account = (account_id, names[account_id])
+        plan = build_plan(client, st, TAG, account)
         try:
             categories = client.categories()
         except Exception:
@@ -342,24 +369,58 @@ def preview():
     except NotConfigured:
         return page(SETUP, target=target_name())
     except (ParseError, FireflyError) as e:
-        return page(UPLOAD, error=str(e))
+        return page(UPLOAD, error=str(e), supported=SUPPORTED)
     except Exception as e:  # z. B. Ziel nicht erreichbar
-        return page(UPLOAD, error=f"Unerwarteter Fehler: {e}")
-    pid = uuid.uuid4().hex
-    with LOCK:
-        _cleanup()
-        PLANS[pid] = (time.time(), plan)
+        return page(UPLOAD, error=f"Unerwarteter Fehler: {e}", supported=SUPPORTED)
+    pid = _store(plan, raw, pid)
     n = lambda s: sum(1 for r in plan.rows if r.status == s)  # noqa: E731
     n_learned = sum(1 for r in plan.rows if r.status == "neu" and r.category)
     return page(PREVIEW, plan=plan, pid=pid, n_new=n("neu"), n_dup=n("duplikat"),
-                n_pend=n("vorgemerkt"), n_learned=n_learned, categories=categories)
+                n_pend=n("vorgemerkt"), n_skip=n("übersprungen"), n_learned=n_learned,
+                categories=categories)
+
+
+@app.post("/vorschau")
+def preview():
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return redirect(url_for("index", error="Bitte eine Datei auswählen."))
+    return _show_preview(f.read())
+
+
+@app.route("/konto/<pid>", methods=["GET", "POST"])
+def pick_account(pid):
+    with LOCK:
+        item = PLANS.get(pid)
+    if not item:
+        return redirect(url_for("index", error="Die Vorschau ist abgelaufen. Bitte die Datei erneut hochladen."))
+    raw = item[2]
+    if request.method == "POST":
+        account_id = request.form.get("account", "")
+        try:
+            bank = parse(raw).bank
+        except ParseError as e:
+            return page(UPLOAD, error=str(e), supported=SUPPORTED)
+        mapping = dict(settings.load()["bank_accounts"])
+        mapping[bank] = account_id
+        settings.save(bank_accounts=mapping)
+        return _show_preview(raw, pid, account_id)
+    try:
+        st = parse(raw)
+        accounts = ff().all_accounts()
+    except NotConfigured:
+        return page(SETUP, target=target_name())
+    except Exception as e:
+        return page(UPLOAD, error=f"Konten konnten nicht geladen werden: {e}", supported=SUPPORTED)
+    return page(PICK, pid=pid, bank=st.bank, accounts=accounts,
+                current=settings.load()["bank_accounts"].get(st.bank), target=target_name())
 
 
 @app.post("/import/<pid>")
 def do_import(pid):
     with LOCK:
         item = PLANS.pop(pid, None)
-    if not item:
+    if not item or item[1] is None:
         return redirect(url_for("index", error="Die Vorschau ist abgelaufen. Bitte die Datei erneut hochladen."))
     try:
         plan = item[1]
@@ -367,7 +428,7 @@ def do_import(pid):
                    for i, r in enumerate(plan.rows) if r.status == "neu"}
         results = run_import(ff(), plan, choices)
     except Exception as e:
-        return page(UPLOAD, error=f"Import abgebrochen: {e}")
+        return page(UPLOAD, error=f"Import abgebrochen: {e}", supported=SUPPORTED)
     ok = sum(1 for _, good, _ in results if good)
     return page(RESULT, results=results, ok=ok, fail=len(results) - ok, link=target_link(), target=target_name())
 

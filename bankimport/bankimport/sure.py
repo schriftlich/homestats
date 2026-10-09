@@ -66,6 +66,9 @@ class Sure:
                 for a in self._get_all("/accounts", "accounts")]
 
     # --- gleiche Schnittstelle wie Firefly --------------------------------------
+    def all_accounts(self):
+        return [(i, n) for i, n, _ in self.accounts()]
+
     def asset_accounts(self):
         names = {i: n for i, n, _ in self.accounts()}
         return {iban: (aid, names.get(aid, "?")) for iban, aid in self.account_map.items() if aid in names}

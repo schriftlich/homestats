@@ -25,6 +25,7 @@ class Booking:
     creditor_id: str = ""
     mandate: str = ""
     reference: str = ""
+    skip: str = ""            # Grund, warum die Buchung nicht importiert wird (leer = importieren)
 
 
 @dataclass
@@ -57,7 +58,7 @@ def parse_german_amount(text: str) -> Decimal:
 
 
 def parse_german_date(text: str) -> date:
-    m = re.match(r"^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$", text.strip())
+    m = re.match(r"^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2}|\d{4})$", text.strip())
     if not m:
         raise ParseError(f"Datum nicht lesbar: {text!r}")
     d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
@@ -136,12 +137,63 @@ def parse_dkb(raw: bytes) -> Statement:
     return st
 
 
-PARSERS = {"dkb": parse_dkb}
+AYVENS_HEADER = ["Datum", "Referenzkonto", "Beschreibung", "Sort", "Betrag"]
+AYVENS_NO_TEXT = ("keine beschreibung verfugbar", "keine beschreibung verfügbar")
+
+
+def parse_ayvens(raw: bytes) -> Statement:
+    """Ayvens Bank (Tagesgeld): Komma-getrennt, Datum TT-MM-JJJJ, keine eigene IBAN in der Datei.
+
+    „Referenzkonto“ ist die Gegenseite: eine IBAN (z. B. das Referenzkonto bei der DKB),
+    eine reine Kontonummer (Unterkonto/Topf bei Ayvens) oder leer (Zinsen).
+    Bewegungen zu Unterkonten werden übersprungen – das Geld bleibt bei Ayvens.
+    """
+    rows = list(csv.reader(io.StringIO(_decode(raw)), delimiter=","))
+    if not rows or [h.strip() for h in rows[0]][:5] != AYVENS_HEADER:
+        raise ParseError("Keine Ayvens-Umsatzliste (Kopfzeile Datum,Referenzkonto,Beschreibung,Sort,Betrag fehlt).")
+
+    st = Statement(bank="Ayvens Bank", account_iban="")
+    for n, row in enumerate(rows[1:], start=2):
+        if not any(cell.strip() for cell in row):
+            continue
+        row = (row + [""] * 5)[:5]
+        datum, ref, text, sort, betrag = (c.strip() for c in row)
+        amount = parse_german_amount(betrag)
+        if sort.lower() == "ab" and amount > 0:
+            amount = -amount
+        if text.lower() in AYVENS_NO_TEXT:
+            text = ""
+        ref = ref.replace(" ", "").upper()
+        iban, cp, skip = "", "", ""
+        if not ref:
+            cp = "Ayvens Bank"
+        elif IBAN_RE.match(ref):
+            iban = ref
+        else:
+            cp = f"Unterkonto {ref}"
+            skip = "Unterkonto"
+        st.bookings.append(Booking(
+            line=n,
+            date=parse_german_date(datum),
+            amount=amount,
+            counterparty=cp,
+            iban=iban,
+            description=re.sub(r"\s+", " ", text),
+            skip=skip,
+        ))
+    return st
+
+
+PARSERS = {"dkb": parse_dkb, "ayvens": parse_ayvens}
+SUPPORTED = "DKB (Girokonto) und Ayvens Bank (Tagesgeld)"
 
 
 def parse(raw: bytes) -> Statement:
-    """Erkennt die Bank anhand des Inhalts. Bisher nur DKB."""
+    """Erkennt die Bank anhand des Inhalts."""
     text = _decode(raw)
     if '"Buchungsdatum";"Wertstellung"' in text or "Buchungsdatum;Wertstellung" in text:
         return parse_dkb(raw)
-    raise ParseError("Dieses Dateiformat kenne ich noch nicht. Bisher wird der DKB-CSV-Export unterstützt.")
+    first = text.lstrip().split("\n", 1)[0].replace('"', "").strip()
+    if first.startswith(",".join(AYVENS_HEADER)):
+        return parse_ayvens(raw)
+    raise ParseError(f"Dieses Dateiformat kenne ich noch nicht. Unterstützt: {SUPPORTED}.")

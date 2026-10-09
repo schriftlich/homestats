@@ -20,7 +20,7 @@ description: >-
 
   - Kategorien werden aus bisherigen Buchungen gelernt und vorgeschlagen
 
-  - Unterstützt bisher: DKB
+  - Unterstützt: DKB (Girokonto) und Ayvens Bank (Tagesgeld)
 releaseNotes: >-
   - Sure Integration
 
