@@ -2,7 +2,7 @@ manifestVersion: 1
 id: homestats-bankimport
 category: finance
 name: Bank-Import
-version: "0.3.0"
+version: "0.4.0"
 tagline: Kontoauszüge per Upload direkt in Firefly III oder Sure übernehmen
 icon: https://raw.githubusercontent.com/schriftlich/homestats/main/homestats-bankimport/icon.svg
 description: >-
@@ -22,7 +22,7 @@ description: >-
 
   - Unterstützt: DKB (Girokonto) und Ayvens Bank (Tagesgeld)
 releaseNotes: >-
-  - Sure Integration
+  Ayvens Bank Import
 
 developer: schriftlich
 website: https://github.com/schriftlich/homestats

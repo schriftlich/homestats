@@ -9,7 +9,7 @@ services:
 
   web:
     # Wird von .github/workflows/release-bankimport.yml beim Release auf Tag + Digest gesetzt.
-    image: ghcr.io/schriftlich/homestats-bankimport:0.3.0@sha256:040d985d4cc253a004a05a7b4dde67a16b1b2c5de0ea35a9d3a92bcd6dacf334
+    image: ghcr.io/schriftlich/homestats-bankimport:0.4.0@sha256:cb872a21171af88e6b8b2c96899c532864b3eb4a8f46f96a12e5a201792ebc76
     user: "1000:1000"
     init: true
     restart: on-failure
