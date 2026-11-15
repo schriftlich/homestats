@@ -1,26 +1,27 @@
 "use strict";
-/* Bibelverse lernen – alles läuft im Browser, Daten liegen in localStorage. */
+/* Bibelverse lernen – lernt offline im Browser (localStorage je Nutzer), account.js synchronisiert mit dem Server. */
 
-const KEY = "bvl1";
+let KEY = "bvl1";
 const API = "https://api.getbible.net/v2";
 const $view = document.getElementById("view");
 
 // ---------- Speicher ----------
 function freshState() {
-  return { passages: [], cards: {}, log: {},
+  return { passages: [], cards: {}, log: {}, sync: { cursor: 0, h: {} },
     settings: { newPerDay: 5, blockSize: 4, translation: "schlachter", mode: "tippen" } };
 }
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && Array.isArray(s.passages)) { s.settings = Object.assign(freshState().settings, s.settings); s.log = s.log || {}; return s; }
+    if (s && Array.isArray(s.passages)) { s.settings = Object.assign(freshState().settings, s.settings); s.log = s.log || {}; s.cards = s.cards || {}; s.sync = s.sync || { cursor: 0, h: {} }; return s; }
   } catch (e) { /* leer */ }
   return freshState();
 }
-let S = load();
+let S = freshState();
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); }
   catch (e) { toast("Speichern fehlgeschlagen – Speicher voll?"); }
+  if (typeof scheduleSync === "function") scheduleSync();
 }
 
 // ---------- Helfer ----------
@@ -122,8 +123,9 @@ document.getElementById("tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-tab]"); if (!b) return;
   show(b.dataset.tab);
 });
+let viewArg = null;
 function show(t, arg) {
-  tab = t;
+  tab = t; viewArg = arg;
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === t));
   if ("speechSynthesis" in window) speechSynthesis.cancel();
   window.scrollTo(0, 0);
@@ -453,8 +455,9 @@ function viewSettings() {
         <button data-m="aufdecken" class="${st.mode === "aufdecken" ? "on" : ""}">Aufsagen &amp; aufdecken</button></div>
       <p class="small muted">Tippen: Du tippst zu jedem Wort den ersten Buchstaben – die App prüft und schlägt die Bewertung vor. Aufdecken: Du sagst den Text laut auf und bewertest dich selbst.</p>
     </div>
+    <div id="account"></div>
     <div class="card"><h3 style="margin-top:0">Daten</h3>
-      <p class="small muted">Alles wird nur in diesem Browser gespeichert. Mach ab und zu ein Backup – damit kannst du auch auf ein anderes Gerät umziehen.</p>
+      <p class="small muted">Dein Fortschritt wird mit deinem Konto synchronisiert und ist auf allen Geräten gleich. Ein Backup als Datei schadet trotzdem nicht.</p>
       <div class="row"><button id="exp">Backup herunterladen</button>
       <label class="btn" style="margin:0;color:var(--ink);font-size:1rem">Backup einspielen<input id="imp" type="file" accept="application/json,.json" hidden></label></div>
       <div class="row" style="margin-top:10px"><button id="wipe" style="color:var(--bad)">Alle Daten löschen</button></div>
@@ -463,6 +466,7 @@ function viewSettings() {
   const num = (id, key, min, max) => (document.getElementById(id).onchange = (e) => {
     st[key] = Math.min(max, Math.max(min, parseInt(e.target.value, 10) || min)); save(); toast("Gespeichert");
   });
+  if (typeof renderAccount === "function") renderAccount(document.getElementById("account"));
   num("npd", "newPerDay", 0, 50); num("bs", "blockSize", 2, 12);
   document.getElementById("mode").onclick = (e) => { const b = e.target.closest("button"); if (b) { st.mode = b.dataset.m; save(); viewSettings(); } };
   document.getElementById("exp").onclick = () => {
@@ -477,12 +481,12 @@ function viewSettings() {
       const d = JSON.parse(await f.text());
       if (!d || !Array.isArray(d.passages) || typeof d.cards !== "object") throw new Error();
       if (!confirm("Backup einspielen? Die aktuellen Daten werden ersetzt.")) return;
-      localStorage.setItem(KEY, JSON.stringify(d)); S = load(); toast("Backup eingespielt"); show("heute");
+      d.sync = S.sync; localStorage.setItem(KEY, JSON.stringify(d)); S = load(); save(); toast("Backup eingespielt"); show("heute");
     } catch (err) { toast("Ungültige Backup-Datei"); }
   };
   document.getElementById("wipe").onclick = () => {
-    if (!confirm("Wirklich alle Texte und den gesamten Lernfortschritt löschen?")) return;
-    S = freshState(); save(); show("heute");
+    if (!confirm("Wirklich alle Texte und den gesamten Lernfortschritt löschen – auch auf deinen anderen Geräten?")) return;
+    S = Object.assign(freshState(), { sync: S.sync }); save(); show("heute");
   };
 }
 
@@ -706,6 +710,6 @@ function startPractice(p, a, b) {
 }
 
 // ---------- Start ----------
+// Anmeldung und erster Aufruf: siehe account.js (boot)
 loadTranslations();
-show("heute");
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});

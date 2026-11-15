@@ -1,0 +1,19 @@
+{
+  "name": "bibelvers-lernen",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/auth-entry.js --bundle --format=iife --minify --target=es2020 --outfile=public/auth.js",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@netlify/database": "^2.0.3",
+    "@netlify/identity": "^2.0.1"
+  },
+  "devDependencies": {
+    "@netlify/database-dev": "^1.0.2",
+    "@netlify/functions": "^6.1.1",
+    "esbuild": "^0.25.0",
+    "pg": "^8.23.1"
+  }
+}

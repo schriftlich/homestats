@@ -156,9 +156,20 @@ Die App hängt `~/umbrel/data/storage/downloads` als `/downloads` ein (wie MeTub
 
 ## Bibelverse lernen
 
-Statische Web-App (PWA) in `bibelvers/` – kein Build, kein Server, Daten im Browser (localStorage, Backup als JSON). Gehostet auf Netlify.
+Web-App (PWA) in `bibelvers/`, gehostet auf Netlify (Projekt `bibelvers-lernen`). Frontend ohne Framework, Login über Netlify Identity, Daten in Netlify Database (Postgres).
 
-- Einzelverse, Kapitel und ganze Bücher; Texte gemeinfreier Übersetzungen über getbible.net oder als eigener Text eingefügt.
-- Neue Verse in drei Schritten: lesen → Anfangsbuchstaben → Anfangsbuchstaben tippen.
-- Wiederholung nach SM-2 mit Lernschritten (`srs.js`). Bei Kapiteln baut die App eine Hierarchie: Einzelverse → Abschnitte (Standard 4 Verse) → ganzes Kapitel; die größeren Einheiten werden freigeschaltet, sobald die Einzelverse sitzen. Abfragen zeigen immer das Ende des vorherigen Verses als Anker.
-- Lokal: `cd bibelvers && python3 -m http.server` → <http://localhost:8000>
+```
+bibelvers/public/                  App (HTML/CSS/JS), wird ausgeliefert
+bibelvers/public/srs.js            Wiederholungs-Algorithmus (SM-2 mit Lernschritten)
+bibelvers/public/account.js        Login, Passwort setzen, Synchronisierung
+bibelvers/src/auth-entry.js        wird beim Build zu public/auth.js gebündelt (@netlify/identity)
+bibelvers/netlify/functions/       /api/sync
+bibelvers/lib/sync-core.mjs        Sync-Logik (getestet in test/)
+bibelvers/netlify/database/migrations/  Datenbankschema
+```
+
+- Einzelverse, Kapitel und ganze Bücher; gemeinfreie Übersetzungen über getbible.net oder eigener Text.
+- Neue Verse: lesen → Anfangsbuchstaben → Anfangsbuchstaben tippen. Bei Kapiteln: Einzelverse → Abschnitte → ganzes Kapitel.
+- Offline-first: gelernt wird immer lokal (localStorage je Nutzer); `account.js` gleicht geänderte Datensätze mit `/api/sync` ab. Pro Datensatz gewinnt der jüngere Stand.
+- Zugang nur per Einladung: Netlify → Projekt → Identity → Registrierung „Invite only“, Nutzer dort einladen.
+- Tests: `cd bibelvers && npm install && npm test` (startet ein lokales Postgres).
