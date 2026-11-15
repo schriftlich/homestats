@@ -153,3 +153,12 @@ Die App hängt `~/umbrel/data/storage/downloads` als `/downloads` ein (wie MeTub
 - Lokal testen: `cd tagger && pip install -r requirements-dev.txt && python -m pytest -q` – die Erkennung wird gegen 236 echte MeTube-Titel geprüft (`tests/corpus.json`).
 - Lokal starten: `TAGGER_DOWNLOADS=/pfad/zu/downloads TAGGER_DATA_DIR=./data-dev uvicorn tagger.main:app --reload`
 - Release: Tag `tagger-v1.2.3` (Workflow „Release MP3-Tagger“). Beim ersten Release das Package `homestats-tagger` auf GitHub öffentlich stellen.
+
+## Bibelverse lernen
+
+Statische Web-App (PWA) in `bibelvers/` – kein Build, kein Server, Daten im Browser (localStorage, Backup als JSON). Gehostet auf Netlify.
+
+- Einzelverse, Kapitel und ganze Bücher; Texte gemeinfreier Übersetzungen über getbible.net oder als eigener Text eingefügt.
+- Neue Verse in drei Schritten: lesen → Anfangsbuchstaben → Anfangsbuchstaben tippen.
+- Wiederholung nach SM-2 mit Lernschritten (`srs.js`). Bei Kapiteln baut die App eine Hierarchie: Einzelverse → Abschnitte (Standard 4 Verse) → ganzes Kapitel; die größeren Einheiten werden freigeschaltet, sobald die Einzelverse sitzen. Abfragen zeigen immer das Ende des vorherigen Verses als Anker.
+- Lokal: `cd bibelvers && python3 -m http.server` → <http://localhost:8000>
