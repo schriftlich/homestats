@@ -1,5 +1,5 @@
 // App-Shell offline verfügbar machen. Bibeltexte werden in der App selbst gespeichert.
-const CACHE = "bibelvers-v1";
+const CACHE = "bibelvers-v2";
 const SHELL = ["./", "index.html", "style.css", "books.js", "srs.js", "app.js", "manifest.webmanifest", "icon.svg", "icon-192.png"];
 self.addEventListener("install", (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener("activate", (e) => e.waitUntil(

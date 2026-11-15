@@ -8,7 +8,7 @@ const $view = document.getElementById("view");
 // ---------- Speicher ----------
 function freshState() {
   return { passages: [], cards: {}, log: {},
-    settings: { newPerDay: 5, blockSize: 4, translation: "luther1912", mode: "tippen" } };
+    settings: { newPerDay: 5, blockSize: 4, translation: "schlachter", mode: "tippen" } };
 }
 function load() {
   try {
@@ -369,7 +369,8 @@ async function doLoad() {
       if (!verses.length) {
         for (let c = 1; c <= BOOKS[book - 1][2]; c++) {
           prev.innerHTML = `<div class="card muted">Lade Kapitel ${c} von ${BOOKS[book - 1][2]} …</div>`;
-          verses.push(...await fetchChapter(tr, book, c));
+          try { verses.push(...await fetchChapter(tr, book, c)); }
+          catch (e) { if (c < BOOKS[book - 1][2]) throw e; }   // letztes Kapitel fehlt je nach Zählung
         }
       }
       if (!verses.length) throw new Error("Buch konnte nicht geladen werden.");
